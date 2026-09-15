@@ -1,26 +1,46 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --blue: #123d86;
+  --blue2: #1d5eb9;
+  --wine: #a20d42;
+  --ink: #172033;
+  --muted: #6b778c;
+  --line: #e5eaf1;
+  --bg: #f5f7fa;
+  --card: #ffffff;
+  --green: #138a62;
+  --amber: #b7791f;
+  --red: #b42318;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-dx-blue: var(--blue);
+  --color-dx-blue2: var(--blue2);
+  --color-dx-wine: var(--wine);
+  --color-dx-ink: var(--ink);
+  --color-dx-muted: var(--muted);
+  --color-dx-line: var(--line);
+  --color-dx-bg: var(--bg);
+  --color-dx-card: var(--card);
+  --color-dx-green: var(--green);
+  --color-dx-amber: var(--amber);
+  --color-dx-red: var(--red);
+  --font-sans: var(--font-inter), "Segoe UI", Arial, sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
 }

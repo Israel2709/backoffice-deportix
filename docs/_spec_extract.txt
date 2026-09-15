@@ -1,0 +1,190 @@
+REDISEÑO BACK OFFICE
+DeportiX API – Alcance operativo para App QD
+Especificación funcional y visual · Versión 2 · Septiembre 2026
+Objetivo: simplificar la operación diaria, ordenar jerárquicamente la información y minimizar navegación y captura manual para los datos deportivos consumidos por App QD.
+1. Objetivo y alcance
+El presente documento define el rediseño funcional y visual del Back Office de DeportiX API necesario para administrar la información deportiva consumida actualmente por App QD.
+El alcance comprende Fútbol, Football Americano, Fórmula 1 y Tenis. El objetivo principal es simplificar la operación diaria, ordenar jerárquicamente la información y reducir al mínimo la cantidad de navegación y captura manual requerida por el analista.
+Fuera de alcance: API comercial, documentación técnica, API Explorer, administración de clientes, API Keys, planes, facturación y cualquier función que no sea necesaria para la carga y mantenimiento de los datos deportivos de App QD.
+2. Principios generales de UX
+Interfaz clara y predominantemente blanca, con identidad visual exclusiva de DeportiX API. No utilizar dark mode como diseño principal.
+Contexto heredado: no volver a solicitar información ya determinada por la ruta de navegación.
+Sin IDs técnicos para el analista: UUID, teamId, playerId, matchId, raceId y equivalentes se manejan internamente.
+Captura consolidada: cuando existan múltiples registros homogéneos, priorizar una sola pantalla o tabla.
+Operación por teclado: las tablas editables deben tener un orden lógico de Tab.
+Prioridad operativa: mostrar primero información vigente, próxima o pendiente; el histórico permanece consultable.
+Separación Maestros/Operación: si el dato normalmente no se repite cada temporada, pertenece a Datos Maestros; si corresponde a una edición concreta, pertenece a Operación Deportiva.
+Compatibilidad con automatización: los datos cargados por scripts deben poder consultarse, validarse y corregirse desde el Back Office.
+Los HTML V3 son referencia obligatoria de jerarquía, navegación y línea visual.
+3. Arquitectura y navegación
+3.1 Navegación principal
+El Back Office tendrá tres accesos principales: Inicio | Datos Maestros | Operación Deportiva.
+3.2 Datos Maestros
+Contendrá información estructural y reutilizable. Estructura jerárquica disponible: Deporte → País/Ámbito → Organización Deportiva → Competición. No todos los deportes están obligados a utilizar todos los niveles.
+Deporte
+Catálogos maestros
+Fútbol
+Estructura deportiva; Equipos
+Football Americano
+Estructura deportiva; Equipos
+Fórmula 1
+Estructura deportiva; Circuitos; Equipos; Pilotos
+Tenis
+Estructura deportiva; Jugadores
+3.3 Operación Deportiva
+Flujo general: Deporte → Competición → Temporada/Edición → Operación. El analista no deberá recorrer nuevamente toda la jerarquía estructural para operar.
+3.4 Modelo operativo común
+Modelo lógico: Temporada/Edición → Fase → Ronda/Agrupación → Evento. La interfaz utilizará la terminología natural del deporte: Jornada (Fútbol), Semana/Ronda (NFL), Ronda (Tenis) y Gran Premio/Sesión (F1).
+3.5 Navegación contextual e histórico
+Todas las pantallas deberán mostrar breadcrumbs. Las relaciones determinadas por el contexto se asignarán automáticamente. Las vistas operativas mostrarán prioritariamente Vigente, Próxima y Pendiente; los elementos Finalizados se accederán mediante consulta histórica.
+4. Datos Maestros
+Regla general: si normalmente no tendría que volver a capturarse al iniciar una nueva temporada o edición, pertenece a Datos Maestros.
+4.1 Competiciones
+Campos mínimos: Nombre · Nombre alternativo · Logo · Logo alternativo. Los logos se cargarán mediante archivo. La temporada o edición no pertenece al maestro.
+4.2 Fútbol
+Campo de equipo
+Requisito
+Nombre oficial
+Sí
+Nombre corto
+Sí
+Abreviatura
+Sí
+Nombre alternativo
+Disponible
+País
+Sí
+Logo
+Archivo
+Logo alternativo
+Archivo
+Estado
+Activo / Inactivo
+El equipo se crea una sola vez y se asocia a las temporadas desde Operación Deportiva. No incluir estadio, entrenador, ciudad, colores, redes sociales, plantilla o estadísticas en el alcance actual.
+4.3 Football Americano
+Usará el mismo estándar de equipo de Fútbol. Para el alcance actual: Estados Unidos → NFL. Conferencia y División no forman parte del maestro del equipo.
+4.4 Fórmula 1
+Entidad
+Campos
+Circuitos
+Nombre · País · Imagen
+Equipos
+Nombre · Nombre alternativo · Logo · Logo alternativo
+Pilotos
+Nombre · Número · País · Foto
+El Equipo no pertenece al maestro del Piloto; la relación Piloto - Equipo se define por temporada.
+4.5 Tenis
+Jugadores: Nombre completo · Nombre de visualización · País/Código de país · Foto/Imagen · Estado. Los seeds pertenecen a la edición, no al maestro del jugador.
+4.6 Mantenimiento común
+Los catálogos deberán privilegiar Buscar/Filtros/+ Nuevo y una lista o tabla con Editar. No utilizar Crear | Editar | Eliminar | Consultar como cuatro modos separados. Los IDs técnicos permanecen internos.
+5. Operación Deportiva
+5.1 Fútbol
+Flujo: Operación Deportiva → Fútbol → Competición → Temporada. Dentro de la temporada: General | Participantes | Estructura | Partidos | Clasificación.
+Temporadas
+Mostrar por defecto Vigentes y Próximas. Campos mínimos: Nombre · Fecha inicio · Fecha fin · Estado (Próxima/Vigente/Finalizada/Cancelada).
+Participantes
+Seleccionar equipos existentes en Datos Maestros. La relación Equipo - Temporada es operativa.
+Estructura
+Ejemplo Liga MX: Fase Regular → Jornada 1…17; Liguilla → Play-In cuando corresponda, Cuartos, Semifinales y Final. No es obligatorio precrear toda la estructura.
+Partidos y resultados
+La captura principal será una tabla consolidada por Fase/Jornada, optimizada para Tab y guardado conjunto. Orden visual aprobado:
+Logo Local | Nombre Local | Marcador Local | Marcador Visitante | Nombre Visitante | Logo Visitante
+Además: Fecha · Hora · Estado. Estados: Programado | En curso | Finalizado | Cancelado. Resultados se actualizan en el propio partido, sin módulo separado.
+Local y visitante deben ser diferentes.
+Ambos deben pertenecer a la temporada.
+Programado requiere fecha/hora.
+Finalizado requiere marcador.
+Evitar duplicados accidentales dentro de la jornada.
+Clasificación
+La temporada deberá incluir una pestaña Clasificación con la tabla oficial. Campos: Posición | Equipo | Partidos jugados (PJ) | Goles a favor (GF) | Goles en contra (GC) | Diferencia de goles (DG) | Puntos (Pts).
+DG deberá calcularse automáticamente como GF − GC y no capturarse manualmente. La posición y los puntos deberán reflejar la clasificación oficial; no se recomienda inferir la posición únicamente con reglas locales, ya que pueden existir criterios oficiales de desempate.
+La clasificación deberá utilizar exclusivamente equipos participantes de la temporada y podrá actualizarse manualmente o mediante procesos automáticos, siguiendo las mismas reglas de integridad y publicación del resto del Back Office.
+5.2 Football Americano – NFL
+Reutiliza el patrón de Fútbol: General | Participantes | Estructura | Partidos | Clasificación.
+Estructura: Temporada Regular → Semana 1…18; Playoffs → Wild Card → Divisional → Conference Championships → Super Bowl.
+Debe existir Número de semanas + Generar semanas. La captura de partidos reutiliza el componente consolidado. El modelo debe admitir correctamente resultados oficiales empatados cuando correspondan.
+Clasificación
+La temporada NFL deberá incluir una pestaña Clasificación. Campos: Posición | Equipo | Partidos jugados (PJ) | Ganados (G) | Empatados (E) | Perdidos (P) | Porcentaje (%).
+El porcentaje deberá calcularse automáticamente con la fórmula (Ganados + 0.5 × Empatados) / Partidos jugados. La posición deberá corresponder al orden oficial y no derivarse únicamente del porcentaje cuando existan criterios oficiales de desempate.
+Para el alcance actual de App QD no se incorporarán Conferencia ni División como dimensiones obligatorias de esta tabla.
+5.3 Fórmula 1
+Flujo: Operación Deportiva → Fórmula 1 → Formula 1 → Temporada. Pestañas: General | Participantes | Calendario | Clasificaciones.
+Participantes
+Asociación Piloto - Equipo por temporada, conservando el histórico.
+Calendario y sesiones
+Calendario consolidado: Gran Premio | Circuito | Weekend | Inicio | Estado. Circuito se selecciona desde Datos Maestros.
+Tipo de weekend
+Sesiones requeridas
+Race Weekend
+Qualifying · Race
+Sprint Weekend
+Sprint Qualifying · Sprint · Qualifying · Race
+Cada sesión: Tipo · Fecha · Hora · Estado. El sistema gestiona timezone/conversiones. Distancia, Vueltas actuales y Vueltas totales quedan fuera del alcance.
+Resultados y clasificaciones
+Resultados de sesión: Posición | Piloto | Equipo | Resultado, con Clasificado | DNF | DNS | DSQ. No incluir Tiempo, Vueltas, Grid, Pits o Gap.
+Clasificación de Pilotos: Posición | Piloto | Equipo | Puntos | Victorias. Clasificación de Equipos: Posición | Equipo | Puntos. Se almacena la clasificación oficial observada; Behind se deriva y no se almacena. Con esto, Fórmula 1 ya cubre el requisito de tablas de clasificación y no requiere un módulo adicional.
+5.4 Tenis
+El Back Office deberá soportar captura manual y datos originados por procesos automáticos. Flujo: Operación Deportiva → Tenis → Competición → Edición. Dentro: General | Participantes | Draw | Partidos.
+Edición y participantes
+La competición es reutilizable; ATP y WTA de un mismo torneo/año pueden ser ediciones operativas independientes. Campos mínimos de edición: Año/Edición · Género/Circuito · Fecha inicio · Fecha fin · Estado · Estado de publicación.
+Participantes: Jugador | País | Seed | Estado. Indicadores de integridad: participantes completos, seeds completos y ausencia de duplicados.
+Draw
+Vista principal por ronda: R1 | R2 | R3 | Octavos | Cuartos | Semifinales | Final. Los partidos futuros pueden existir con jugadores aún desconocidos. El sistema mantiene matchId y relaciones de origen/destino internamente.
+Draw tendrá Tabla | Bracket. Tabla es la vista operativa; Bracket sirve principalmente para validación visual.
+Partidos, resultados y propagación
+Partidos concentra horarios, estados y resultados. Resultados por sets se capturan en la misma vista y el ganador oficial se almacena explícitamente. Soportar Retiro | Walkover | Descalificación.
+Al finalizar un partido, el ganador se propaga automáticamente al partido correspondiente de la siguiente ronda. Si se corrige un ganador ya propagado, el sistema debe advertir el impacto y actualizar consistentemente el Draw posterior.
+Publicación
+Publicar no será un módulo independiente. El estado deportivo y el estado de publicación son conceptos distintos. Debe distinguirse No publicada | Publicada.
+6. Reglas transversales de captura y validación
+Priorizar tablas consolidadas para múltiples registros homogéneos.
+Tab debe recorrer campos en orden lógico y continuar al siguiente registro.
+Permitir guardado consolidado por unidad natural de trabajo y advertir cambios sin guardar.
+Ocultar IDs técnicos al analista.
+Heredar automáticamente el contexto determinado por navegación.
+Restringir selectores a opciones válidas para la temporada/edición.
+Prevenir duplicados evidentes antes del guardado.
+Aplicar validaciones dependientes del estado.
+Advertir antes de cambios que afecten información relacionada posteriormente.
+Automatización y Back Office deben operar sobre las mismas entidades y relaciones.
+Después de cargas automáticas, priorizar revisión por excepción e indicadores de integridad.
+Separar estado deportivo de estado de publicación.
+Proteger información relacionada frente a eliminaciones; preferir Inactivar cuando corresponda.
+Mostrar errores en lenguaje operativo, no técnico.
+Orientación principal a escritorio; no sacrificar eficiencia de tablas por un enfoque mobile-first.
+7. Referencia visual HTML
+Los archivos del Back Office Consolidado V3 forman parte integral de esta especificación y son referencia obligatoria para jerarquía visual, navegación, breadcrumbs, distribución, tablas consolidadas, pestañas, acciones, densidad de información y línea gráfica.
+No se exige reproducción pixel-perfect, pero no deberán modificarse sustancialmente la experiencia, jerarquía o filosofía de captura sin validación previa. Los placeholders deportivos deberán sustituirse por recursos oficiales locales cuando corresponda.
+8. Criterios de aceptación
+8.1 Generales
+Existen Inicio, Datos Maestros y Operación Deportiva.
+Breadcrumbs y herencia de contexto funcionan en toda la operación.
+No existe ningún flujo que requiera copiar/pegar IDs técnicos.
+Los maestros definidos para los cuatro deportes pueden buscarse, consultarse y editarse.
+Las relaciones específicas de temporada/edición no se almacenan permanentemente en maestros.
+Las pantallas de captura masiva permiten Tab, guardado consolidado y protección ante salida con cambios.
+8.2 Por deporte
+Deporte
+Flujo mínimo aceptado
+Fútbol
+Temporada → Participantes → Estructura → Partidos → Resultados → Clasificación
+NFL
+Temporada → Participantes → Regular/Playoffs → Partidos → Resultados → Clasificación
+F1
+Temporada → Participantes → Calendario → GP → Sesiones → Resultados → Clasificaciones
+Tenis
+Edición → Participantes → Draw → Partidos → Resultados → Propagación → Publicación
+8.2.1 Criterios específicos de clasificación
+Fútbol: la tabla deberá mostrar Posición, Equipo, PJ, GF, GC, DG y Pts; DG deberá ser derivada de GF − GC.
+NFL: la tabla deberá mostrar Posición, Equipo, PJ, G, E, P y %; el porcentaje deberá ser derivado de los resultados acumulados.
+Fórmula 1: se mantienen las clasificaciones de pilotos y equipos ya definidas en la sección 5.3.
+Tenis: no requiere tabla de clasificación dentro del alcance actual.
+8.3 Integridad e histórico
+El sistema deberá impedir o advertir participantes duplicados, relaciones inválidas, participantes fuera de contexto, resultados incompatibles con el estado, eliminaciones que rompan histórico y modificaciones con impacto posterior. Las vistas operativas priorizan Vigente | Próxima | Pendiente; Finalizados quedan en histórico.
+8.4 Validación con App QD
+Antes de considerar terminada la migración deberá realizarse al menos una prueba completa Back Office → DeportiX API → App QD para cada deporte: Fútbol (partidos/resultados), NFL (partidos/resultados), F1 (calendario/sesiones/resultados necesarios) y Tenis (participantes/Draw/resultados/propagación).
+El rediseño no deberá exigir cambios innecesarios al contrato de consumo actual de App QD. Cualquier cambio indispensable deberá documentarse y validarse antes de implementarse.
+8.5 Aceptación visual
+La entrega se comparará contra los HTML V3 aprobados. Una implementación técnicamente funcional que vuelva a introducir captura registro por registro, navegación innecesaria o exposición de IDs no se considerará equivalente al diseño aprobado.
+Cierre
+El objetivo del nuevo Back Office de DeportiX API no es incrementar la cantidad de funcionalidades, sino reducir la complejidad operativa necesaria para mantener información deportiva confiable para App QD. La solución deberá privilegiar reutilización de datos maestros, contexto heredado, captura consolidada, automatización, validación por excepción y mínima intervención manual. Cualquier funcionalidad adicional no necesaria para este objetivo queda fuera del alcance inicial.

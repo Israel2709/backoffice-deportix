@@ -85,7 +85,7 @@ export function EditableDataTable<T extends { id: string }>({
     let list = [...rows];
 
     for (const col of columns) {
-      if (!col.filterable) continue;
+      if (col.filterable === false) continue;
       const q = (filters[col.id] ?? "").trim().toLowerCase();
       if (!q) continue;
       list = list.filter((row) => {

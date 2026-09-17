@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 
 export function StickyActions({
   dirty,
@@ -21,7 +22,13 @@ export function StickyActions({
         Descartar cambios
       </Button>
       <Button onClick={onSave} disabled={saving}>
-        {saving ? "Guardando…" : saveLabel}
+        {saving ? (
+          <span className="inline-flex items-center gap-2">
+            <Spinner size="sm" className="text-white" /> Guardando…
+          </span>
+        ) : (
+          saveLabel
+        )}
       </Button>
     </div>
   );

@@ -1,32 +1,76 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import {
   createCountry,
   createLeague,
   listAdminCountries,
   listAdminLeagues,
+  updateCountry,
   updateLeague,
 } from "@/lib/api/admin-nfl";
-import type { NflLeague } from "@/lib/api/nfl-types";
+import type { NflCountry, NflLeague } from "@/lib/api/nfl-types";
+import { EditableDataTable } from "@/components/data/editable-data-table";
 import { Button } from "@/components/ui/button";
-import { Field, TextInput, TextSelect } from "@/components/capture/field";
+import { TextInput, TextSelect } from "@/components/capture/field";
 import { Note } from "@/components/ui/note";
-import { ListRow, Section } from "@/components/ui/page";
+import { Section } from "@/components/ui/page";
+import { LoadingBlock } from "@/components/ui/spinner";
+
+const countryColumns = [
+  {
+    id: "name" as const,
+    header: "Nombre",
+    placeholder: "Nombre del país",
+  },
+  {
+    id: "code" as const,
+    header: "Código",
+    placeholder: "US",
+    className: "w-[140px]",
+  },
+];
+
+const leagueColumns = [
+  {
+    id: "name" as const,
+    header: "Nombre",
+    placeholder: "NFL",
+  },
+  {
+    id: "name_alt" as const,
+    header: "Nombre alt.",
+    placeholder: "Opcional",
+  },
+  {
+    id: "country_id" as const,
+    header: "País",
+    placeholder: "País / ámbito",
+  },
+  {
+    id: "type" as const,
+    header: "Tipo",
+    placeholder: "League",
+    className: "w-[120px]",
+  },
+  {
+    id: "logo" as const,
+    header: "Logo (URL)",
+    placeholder: "https://…",
+  },
+];
 
 export function StructureMasterPanel() {
   const queryClient = useQueryClient();
   const [countryName, setCountryName] = useState("");
   const [countryCode, setCountryCode] = useState("");
-  const [leagueForm, setLeagueForm] = useState({
-    name: "",
-    name_alt: "",
-    country_id: "",
-    logo: "",
-  });
-  const [editingLeague, setEditingLeague] = useState<NflLeague | null>(null);
+  const [leagueName, setLeagueName] = useState("");
+  const [leagueNameAlt, setLeagueNameAlt] = useState("");
+  const [leagueCountryId, setLeagueCountryId] = useState("");
+  const [leagueType, setLeagueType] = useState("League");
+  const [leagueLogo, setLeagueLogo] = useState("");
 
   const countriesQuery = useQuery({
     queryKey: ["admin", "nfl", "countries"],
@@ -36,6 +80,23 @@ export function StructureMasterPanel() {
     queryKey: ["admin", "nfl", "leagues"],
     queryFn: listAdminLeagues,
   });
+
+  const getCountryValues = useCallback((row: NflCountry) => {
+    return {
+      name: row.name ?? "",
+      code: row.code ?? "",
+    };
+  }, []);
+
+  const getLeagueValues = useCallback((row: NflLeague) => {
+    return {
+      name: row.name ?? "",
+      name_alt: row.name_alt ?? "",
+      country_id: row.country_id ?? row.country_name ?? "",
+      type: row.type ?? "League",
+      logo: row.logo ?? "",
+    };
+  }, []);
 
   const createCountryMutation = useMutation({
     mutationFn: () =>
@@ -54,31 +115,89 @@ export function StructureMasterPanel() {
     onError: (error: Error) => toast.error(error.message),
   });
 
-  const saveLeagueMutation = useMutation({
-    mutationFn: async () => {
-      const payload = {
-        name: leagueForm.name.trim(),
-        name_alt: leagueForm.name_alt.trim() || null,
-        country_id: leagueForm.country_id || null,
-        logo: leagueForm.logo.trim() || null,
-      };
-      if (editingLeague) {
-        return updateLeague(editingLeague.id, payload);
+  const saveCountriesMutation = useMutation({
+    mutationFn: async (
+      changes: Array<{ id: string; values: Record<string, string> }>,
+    ) => {
+      for (const change of changes) {
+        const name = change.values.name?.trim() ?? "";
+        if (!name) throw new Error("El nombre del país es obligatorio.");
+        await updateCountry(change.id, {
+          name,
+          code: change.values.code?.trim() || null,
+        });
       }
-      return createLeague(payload);
     },
-    onSuccess: () => {
+    onSuccess: (_data, changes) => {
       toast.success(
-        editingLeague ? "Competición actualizada" : "Competición creada",
+        changes.length === 1
+          ? "País actualizado"
+          : `${changes.length} países actualizados`,
       );
-      setEditingLeague(null);
-      setLeagueForm({ name: "", name_alt: "", country_id: "", logo: "" });
+      void queryClient.invalidateQueries({
+        queryKey: ["admin", "nfl", "countries"],
+      });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const createLeagueMutation = useMutation({
+    mutationFn: () =>
+      createLeague({
+        name: leagueName.trim(),
+        name_alt: leagueNameAlt.trim() || null,
+        country_id: leagueCountryId || null,
+        type: leagueType.trim() || "League",
+        logo: leagueLogo.trim() || null,
+      }),
+    onSuccess: () => {
+      toast.success("Competición creada");
+      setLeagueName("");
+      setLeagueNameAlt("");
+      setLeagueCountryId("");
+      setLeagueType("League");
+      setLeagueLogo("");
       void queryClient.invalidateQueries({
         queryKey: ["admin", "nfl", "leagues"],
       });
     },
     onError: (error: Error) => toast.error(error.message),
   });
+
+  const saveLeaguesMutation = useMutation({
+    mutationFn: async (
+      changes: Array<{ id: string; values: Record<string, string> }>,
+    ) => {
+      for (const change of changes) {
+        const name = change.values.name?.trim() ?? "";
+        if (!name) throw new Error("El nombre de la competición es obligatorio.");
+        await updateLeague(change.id, {
+          name,
+          name_alt: change.values.name_alt?.trim() || null,
+          country_id: change.values.country_id?.trim() || null,
+          type: change.values.type?.trim() || "League",
+          logo: change.values.logo?.trim() || null,
+        });
+      }
+    },
+    onSuccess: (_data, changes) => {
+      toast.success(
+        changes.length === 1
+          ? "Competición actualizada"
+          : `${changes.length} competiciones actualizadas`,
+      );
+      void queryClient.invalidateQueries({
+        queryKey: ["admin", "nfl", "leagues"],
+      });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const countries = countriesQuery.data?.data ?? [];
+
+  if (countriesQuery.isLoading && leaguesQuery.isLoading) {
+    return <LoadingBlock label="Cargando estructura…" />;
+  }
 
   return (
     <div className="space-y-6">
@@ -101,141 +220,80 @@ export function StructureMasterPanel() {
             + País
           </Button>
         </div>
-        <div className="flex flex-col gap-2.5">
-          {(countriesQuery.data?.data ?? []).map((country) => (
-            <ListRow
-              key={country.id}
-              title={country.name}
-              meta={country.code ?? undefined}
-            />
-          ))}
-        </div>
+        {countriesQuery.isLoading ? (
+          <LoadingBlock compact label="Cargando países…" />
+        ) : (
+          <EditableDataTable
+            columns={countryColumns}
+            rows={countries}
+            getValues={getCountryValues}
+            saving={saveCountriesMutation.isPending}
+            emptyLabel="No hay países. Crea uno arriba."
+            onSave={(changes) => saveCountriesMutation.mutateAsync(changes)}
+          />
+        )}
       </Section>
 
-      <Section
-        title="Competiciones"
-        action={
-          <Button
-            onClick={() => {
-              setEditingLeague(null);
-              setLeagueForm({
-                name: "",
-                name_alt: "",
-                country_id: countriesQuery.data?.data[0]?.id ?? "",
-                logo: "",
-              });
-            }}
+      <Section title="Competiciones">
+        <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-[1fr_1fr_160px_120px_1fr_auto]">
+          <TextInput
+            placeholder="Nombre"
+            value={leagueName}
+            onChange={(e) => setLeagueName(e.target.value)}
+          />
+          <TextInput
+            placeholder="Nombre alt."
+            value={leagueNameAlt}
+            onChange={(e) => setLeagueNameAlt(e.target.value)}
+          />
+          <TextSelect
+            value={leagueCountryId}
+            onChange={(e) => setLeagueCountryId(e.target.value)}
           >
-            + Nueva competición
+            <option value="">País…</option>
+            {countries.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </TextSelect>
+          <TextSelect
+            value={leagueType}
+            onChange={(e) => setLeagueType(e.target.value)}
+          >
+            <option value="League">Liga</option>
+            <option value="Cup">Copa</option>
+            <option value="Friendly">Amistoso</option>
+            <option value="Other">Otro</option>
+          </TextSelect>
+          <TextInput
+            placeholder="Logo URL"
+            value={leagueLogo}
+            onChange={(e) => setLeagueLogo(e.target.value)}
+          />
+          <Button
+            disabled={!leagueName.trim() || createLeagueMutation.isPending}
+            onClick={() => createLeagueMutation.mutate()}
+          >
+            + Competición
           </Button>
-        }
-      >
-        <div className="mb-4 flex flex-col gap-2.5">
-          {(leaguesQuery.data?.data ?? []).map((league) => (
-            <div
-              key={league.id}
-              className="flex items-center justify-between gap-4 rounded-[14px] border border-dx-line bg-white px-[17px] py-[15px]"
-            >
-              <div>
-                <div className="font-bold">{league.name}</div>
-                <div className="mt-1 text-[13px] text-dx-muted">
-                  {league.name_alt || league.type}
-                </div>
-              </div>
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setEditingLeague(league);
-                  setLeagueForm({
-                    name: league.name,
-                    name_alt: league.name_alt ?? "",
-                    country_id: league.country_id ?? "",
-                    logo: league.logo ?? "",
-                  });
-                }}
-              >
-                Editar
-              </Button>
-            </div>
-          ))}
         </div>
 
-        {(editingLeague !== null ||
-          leagueForm.name ||
-          leagueForm.country_id) && (
-          <div className="rounded-2xl border border-dx-line bg-dx-card p-5">
-            <h3 className="text-lg font-semibold">
-              {editingLeague ? "Editar competición" : "Nueva competición"}
-            </h3>
-            <div className="mt-3.5 grid grid-cols-1 gap-3.5 md:grid-cols-2">
-              <Field label="Nombre">
-                <TextInput
-                  value={leagueForm.name}
-                  onChange={(e) =>
-                    setLeagueForm({ ...leagueForm, name: e.target.value })
-                  }
-                />
-              </Field>
-              <Field label="Nombre alternativo">
-                <TextInput
-                  value={leagueForm.name_alt}
-                  onChange={(e) =>
-                    setLeagueForm({ ...leagueForm, name_alt: e.target.value })
-                  }
-                />
-              </Field>
-              <Field label="País / ámbito">
-                <TextSelect
-                  value={leagueForm.country_id}
-                  onChange={(e) =>
-                    setLeagueForm({
-                      ...leagueForm,
-                      country_id: e.target.value,
-                    })
-                  }
-                >
-                  <option value="">—</option>
-                  {(countriesQuery.data?.data ?? []).map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </TextSelect>
-              </Field>
-              <Field label="Logo (URL)">
-                <TextInput
-                  value={leagueForm.logo}
-                  onChange={(e) =>
-                    setLeagueForm({ ...leagueForm, logo: e.target.value })
-                  }
-                />
-              </Field>
-            </div>
-            <div className="mt-4 flex gap-2">
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setEditingLeague(null);
-                  setLeagueForm({
-                    name: "",
-                    name_alt: "",
-                    country_id: "",
-                    logo: "",
-                  });
-                }}
-              >
-                Cancelar
-              </Button>
-              <Button
-                disabled={
-                  !leagueForm.name.trim() || saveLeagueMutation.isPending
-                }
-                onClick={() => saveLeagueMutation.mutate()}
-              >
-                Guardar
-              </Button>
-            </div>
+        {leaguesQuery.isLoading ? (
+          <LoadingBlock compact label="Cargando competiciones…" />
+        ) : leaguesQuery.isError ? (
+          <div className="rounded-xl border border-[#f1dfa9] bg-[#fff9e8] px-3.5 py-3 text-[13px] text-[#7d5a00]">
+            {(leaguesQuery.error as Error).message}
           </div>
+        ) : (
+          <EditableDataTable
+            columns={leagueColumns}
+            rows={leaguesQuery.data?.data ?? []}
+            getValues={getLeagueValues}
+            saving={saveLeaguesMutation.isPending}
+            emptyLabel="No hay competiciones. Crea una arriba."
+            onSave={(changes) => saveLeaguesMutation.mutateAsync(changes)}
+          />
         )}
       </Section>
 

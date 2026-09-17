@@ -16,6 +16,7 @@ import {
 } from "@/lib/api/nfl-types";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { LoadingBlock } from "@/components/ui/spinner";
 import { Field, TextInput, TextSelect } from "@/components/capture/field";
 
 function statusTone(status?: SeasonStatus) {
@@ -75,6 +76,10 @@ export function SeasonsListPanel({ leagueId }: { leagueId: string }) {
   const historic = seasons.filter(
     (s) => s.status === "finished" || s.status === "cancelled",
   );
+
+  if (seasonsQuery.isLoading || leagueQuery.isLoading) {
+    return <LoadingBlock label="Cargando temporadas…" />;
+  }
 
   return (
     <div className="space-y-5">

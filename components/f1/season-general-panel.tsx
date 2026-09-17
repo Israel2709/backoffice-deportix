@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingBlock } from "@/components/ui/spinner";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -93,7 +95,7 @@ export function SeasonGeneralPanel({ seasonId }: { seasonId: string }) {
   const races = racesQuery.data?.data ?? [];
 
   if (seasonQuery.isLoading) {
-    return <p className="text-sm text-dx-muted">Cargando…</p>;
+    return <LoadingBlock compact label="Cargando…" />;
   }
 
   return (

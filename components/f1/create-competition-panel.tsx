@@ -8,6 +8,7 @@ import { createCompetition } from "@/lib/api/admin-f1";
 import { Field, TextInput } from "@/components/capture/field";
 import { Button } from "@/components/ui/button";
 import { Note } from "@/components/ui/note";
+import { Spinner } from "@/components/ui/spinner";
 
 export function CreateCompetitionPanel() {
   const router = useRouter();
@@ -68,7 +69,13 @@ export function CreateCompetitionPanel() {
             disabled={!canSave}
             onClick={() => createMutation.mutate()}
           >
-            {createMutation.isPending ? "Creando…" : "Crear competición"}
+            {createMutation.isPending ? (
+              <span className="inline-flex items-center gap-2">
+                <Spinner size="sm" className="text-white" /> Creando…
+              </span>
+            ) : (
+              "Crear competición"
+            )}
           </Button>
         </div>
       </div>

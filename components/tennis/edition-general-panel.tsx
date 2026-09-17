@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingBlock } from "@/components/ui/spinner";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -100,7 +102,7 @@ export function EditionGeneralPanel({ editionId }: { editionId: string }) {
   const finished = matches.filter((m) => m.status === "finished").length;
 
   if (editionQuery.isLoading) {
-    return <p className="text-sm text-dx-muted">Cargando…</p>;
+    return <LoadingBlock compact label="Cargando…" />;
   }
 
   return (

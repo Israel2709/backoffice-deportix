@@ -1,4 +1,5 @@
 "use client";
+import { LoadingBlock } from "@/components/ui/spinner";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
@@ -196,6 +197,10 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
         set3_p2: "",
       },
     ]);
+  }
+
+  if (matchesQuery.isLoading) {
+    return <LoadingBlock label="Cargando partidos…" />;
   }
 
   return (

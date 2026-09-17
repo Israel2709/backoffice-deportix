@@ -1,4 +1,5 @@
 "use client";
+import { LoadingBlock } from "@/components/ui/spinner";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
@@ -194,6 +195,10 @@ export function SeasonGamesPanel({ seasonId }: { seasonId: string }) {
         week: firstRound?.name ?? "",
       },
     ]);
+  }
+
+  if (gamesQuery.isLoading || roundsQuery.isLoading) {
+    return <LoadingBlock label="Cargando partidos…" />;
   }
 
   const currentRound = roundsQuery.data?.data.find((r) => r.id === roundFilter);

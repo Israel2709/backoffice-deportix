@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingBlock } from "@/components/ui/spinner";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -98,7 +100,7 @@ export function TeamsMasterPanel() {
       </div>
 
       {teamsQuery.isLoading ? (
-        <p className="text-sm text-dx-muted">Cargando…</p>
+        <LoadingBlock compact label="Cargando…" />
       ) : teamsQuery.isError ? (
         <div className="rounded-xl border border-[#f1dfa9] bg-[#fff9e8] px-3.5 py-3 text-[13px] text-[#7d5a00]">
           {(teamsQuery.error as Error).message}

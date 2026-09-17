@@ -1,4 +1,5 @@
 "use client";
+import { LoadingBlock } from "@/components/ui/spinner";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
@@ -158,6 +159,10 @@ export function SeasonCalendarPanel({
     setRows((prev) =>
       prev.map((row, i) => (i === index ? { ...row, ...patch } : row)),
     );
+  }
+
+  if (racesQuery.isLoading || circuitsQuery.isLoading) {
+    return <LoadingBlock label="Cargando calendario…" />;
   }
 
   return (

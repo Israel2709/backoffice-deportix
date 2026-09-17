@@ -1,4 +1,5 @@
 "use client";
+import { LoadingBlock } from "@/components/ui/spinner";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
@@ -143,6 +144,10 @@ export function SeasonRankingsPanel({ seasonId }: { seasonId: string }) {
     tab === "drivers"
       ? saveDriversMutation.isPending
       : saveTeamsMutation.isPending;
+
+  if (driverRankingsQuery.isLoading || teamRankingsQuery.isLoading) {
+    return <LoadingBlock label="Cargando clasificaciones…" />;
+  }
 
   return (
     <div className="space-y-4">

@@ -11,6 +11,7 @@ import {
 import { Field, TextInput, TextSelect } from "@/components/capture/field";
 import { Button } from "@/components/ui/button";
 import { Note } from "@/components/ui/note";
+import { LoadingBlock, Spinner } from "@/components/ui/spinner";
 
 export function CreateCompetitionPanel() {
   const router = useRouter();
@@ -48,6 +49,10 @@ export function CreateCompetitionPanel() {
   });
 
   const canSave = form.name.trim().length > 0 && !createMutation.isPending;
+
+  if (countriesQuery.isLoading) {
+    return <LoadingBlock label="Cargando formulario…" />;
+  }
 
   return (
     <div className="space-y-4">
@@ -116,7 +121,13 @@ export function CreateCompetitionPanel() {
             disabled={!canSave}
             onClick={() => createMutation.mutate()}
           >
-            {createMutation.isPending ? "Creando…" : "Crear competición"}
+            {createMutation.isPending ? (
+              <span className="inline-flex items-center gap-2">
+                <Spinner size="sm" className="text-white" /> Creando…
+              </span>
+            ) : (
+              "Crear competición"
+            )}
           </Button>
         </div>
       </div>

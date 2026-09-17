@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowDown, ArrowUp, ArrowUpDown, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUp, ArrowUpDown, Trash2 } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useDirtyGuard } from "@/hooks/use-dirty-guard";
@@ -23,10 +24,13 @@ type EditableDataTableProps<T extends { id: string }> = {
   rows: T[];
   /** Map row → string values used for edit/filter/sort. */
   getValues: (row: T) => Record<string, string>;
-  onSave: (
+  /** When omitted, the table is browse-only (no inline edit / save). */
+  onSave?: (
     changes: Array<{ id: string; values: Record<string, string> }>,
   ) => void | Promise<void>;
   onDelete?: (id: string) => void | Promise<void>;
+  /** When set, rows navigate on click (browse lists). */
+  rowHref?: (row: T) => string;
   saving?: boolean;
   deletingId?: string | null;
   emptyLabel?: string;
@@ -45,11 +49,13 @@ export function EditableDataTable<T extends { id: string }>({
   getValues,
   onSave,
   onDelete,
+  rowHref,
   saving = false,
   deletingId = null,
   emptyLabel = "Sin registros.",
   filterPlaceholder = "Filtrar…",
 }: EditableDataTableProps<T>) {
+  const editableMode = Boolean(onSave);
   const [draft, setDraft] = useState<Record<string, Record<string, string>>>(
     {},
   );
@@ -67,7 +73,7 @@ export function EditableDataTable<T extends { id: string }>({
     setBaseline(JSON.stringify(next));
   }, [rows, getValues]);
 
-  const dirty = JSON.stringify(draft) !== baseline;
+  const dirty = editableMode && JSON.stringify(draft) !== baseline;
   useDirtyGuard(dirty);
 
   const baselineMap = useMemo(
@@ -128,6 +134,7 @@ export function EditableDataTable<T extends { id: string }>({
   }
 
   async function handleSave() {
+    if (!onSave) return;
     const changes: Array<{ id: string; values: Record<string, string> }> = [];
 
     for (const [id, values] of Object.entries(draft)) {
@@ -139,6 +146,9 @@ export function EditableDataTable<T extends { id: string }>({
     if (changes.length === 0) return;
     await onSave(changes);
   }
+
+  const showActions = Boolean(onDelete || rowHref);
+  const colSpan = columns.length + (showActions ? 1 : 0);
 
   const SortIcon = ({ columnId }: { columnId: string }) => {
     if (!sort || sort.columnId !== columnId) {
@@ -196,8 +206,8 @@ export function EditableDataTable<T extends { id: string }>({
                   </div>
                 </th>
               ))}
-              {onDelete ? (
-                <th className="w-[72px] border-b border-dx-line px-3 py-2.5 text-center text-[11px] font-extrabold tracking-wide text-[#667085] uppercase">
+              {showActions ? (
+                <th className="w-[88px] border-b border-dx-line px-3 py-2.5 text-center text-[11px] font-extrabold tracking-wide text-[#667085] uppercase">
                   Acciones
                 </th>
               ) : null}
@@ -207,7 +217,7 @@ export function EditableDataTable<T extends { id: string }>({
             {filteredSorted.length === 0 ? (
               <tr>
                 <td
-                  colSpan={columns.length + (onDelete ? 1 : 0)}
+                  colSpan={colSpan}
                   className="px-3 py-8 text-center text-sm text-dx-muted"
                 >
                   {emptyLabel}
@@ -217,19 +227,28 @@ export function EditableDataTable<T extends { id: string }>({
               filteredSorted.map((row) => {
                 const values = draft[row.id] ?? getValues(row);
                 const rowDirty =
+                  editableMode &&
                   JSON.stringify(values) !==
-                  JSON.stringify(baselineMap[row.id] ?? {});
+                    JSON.stringify(baselineMap[row.id] ?? {});
+                const href = rowHref?.(row);
 
                 return (
                   <tr
                     key={row.id}
-                    className={cn(rowDirty && "bg-[#fffdf5]")}
+                    className={cn(
+                      rowDirty && "bg-[#fffdf5]",
+                      href && "hover:bg-[#f8fafc]",
+                    )}
                   >
                     {columns.map((col) => {
                       const key = cellKey(row.id, col.id);
                       const raw = values[col.id] ?? "";
                       const isFocused = focused === key;
-                      const editable = col.editable !== false;
+                      const editable =
+                        editableMode && col.editable !== false;
+                      const display = raw
+                        ? (col.format?.(raw, row) ?? raw)
+                        : (col.placeholder ?? "—");
 
                       return (
                         <td
@@ -258,6 +277,17 @@ export function EditableDataTable<T extends { id: string }>({
                               }}
                               className="w-full rounded-[7px] border border-dx-blue bg-white px-2 py-1.5 text-[13px] text-[#243147] outline-none ring-2 ring-[#edf4ff]"
                             />
+                          ) : href && !editable ? (
+                            <Link
+                              href={href}
+                              className={cn(
+                                "block min-h-[34px] rounded-[7px] px-2 py-1.5 text-[13px] text-inherit hover:text-dx-blue",
+                                !raw && "text-dx-muted",
+                                col.id === "name" && "font-semibold",
+                              )}
+                            >
+                              {display}
+                            </Link>
                           ) : (
                             <div
                               tabIndex={editable ? 0 : undefined}
@@ -269,27 +299,41 @@ export function EditableDataTable<T extends { id: string }>({
                                 editable &&
                                   "cursor-text hover:bg-[#f5f8ff] focus:bg-[#edf4ff] focus:outline-none",
                                 !raw && "text-dx-muted",
+                                !editable &&
+                                  col.id === "name" &&
+                                  "font-semibold",
                               )}
                             >
-                              {raw
-                                ? (col.format?.(raw, row) ?? raw)
-                                : (col.placeholder ?? "—")}
+                              {display}
                             </div>
                           )}
                         </td>
                       );
                     })}
-                    {onDelete ? (
+                    {showActions ? (
                       <td className="border-b border-dx-line px-3 py-1.5 text-center">
-                        <button
-                          type="button"
-                          title="Eliminar"
-                          disabled={deletingId === row.id || saving}
-                          onClick={() => void onDelete(row.id)}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-dx-red hover:bg-[#fef3f2] disabled:opacity-50"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        <div className="inline-flex items-center justify-center gap-1">
+                          {href ? (
+                            <Link
+                              href={href}
+                              title="Abrir"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#8090a8] hover:bg-[#f5f8ff] hover:text-dx-blue"
+                            >
+                              <ArrowRight className="h-4 w-4" />
+                            </Link>
+                          ) : null}
+                          {onDelete ? (
+                            <button
+                              type="button"
+                              title="Eliminar"
+                              disabled={deletingId === row.id || saving}
+                              onClick={() => void onDelete(row.id)}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-dx-red hover:bg-[#fef3f2] disabled:opacity-50"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          ) : null}
+                        </div>
                       </td>
                     ) : null}
                   </tr>
@@ -302,22 +346,31 @@ export function EditableDataTable<T extends { id: string }>({
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-[13px] text-dx-muted">
-          {filteredSorted.length} de {rows.length} · clic en una celda para
-          editar
+          {filteredSorted.length} de {rows.length}
+          {editableMode
+            ? " · clic en una celda para editar"
+            : rowHref
+              ? " · clic en una fila para abrir"
+              : ""}
           {dirty ? " · hay cambios sin guardar" : ""}
         </p>
-        <div className="flex gap-2">
-          <Button
-            variant="secondary"
-            disabled={!dirty || saving}
-            onClick={discard}
-          >
-            Descartar
-          </Button>
-          <Button disabled={!dirty || saving} onClick={() => void handleSave()}>
-            {saving ? "Guardando…" : "Guardar cambios"}
-          </Button>
-        </div>
+        {editableMode ? (
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              disabled={!dirty || saving}
+              onClick={discard}
+            >
+              Descartar
+            </Button>
+            <Button
+              disabled={!dirty || saving}
+              onClick={() => void handleSave()}
+            >
+              {saving ? "Guardando…" : "Guardar cambios"}
+            </Button>
+          </div>
+        ) : null}
       </div>
     </div>
   );

@@ -1,9 +1,23 @@
 "use client";
 
+import { useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { listAdminCompetitions } from "@/lib/api/admin-f1";
+import { EditableDataTable } from "@/components/data/editable-data-table";
 import { Note } from "@/components/ui/note";
+import { LoadingBlock } from "@/components/ui/spinner";
+import { listAdminCompetitions } from "@/lib/api/admin-f1";
+import type { F1Competition } from "@/lib/api/f1-types";
+
+const columns = [
+  { id: "name", header: "Nombre" },
+  {
+    id: "scope",
+    header: "Alcance",
+    filterable: false,
+    sortable: false,
+  },
+];
 
 export function CompetitionsListPanel() {
   const competitionsQuery = useQuery({
@@ -11,45 +25,44 @@ export function CompetitionsListPanel() {
     queryFn: listAdminCompetitions,
   });
 
+  const getValues = useCallback((row: F1Competition) => {
+    return {
+      name: row.name ?? "",
+      scope: "Temporadas · Calendario · Clasificaciones",
+    };
+  }, []);
+
   return (
     <>
       {competitionsQuery.isLoading ? (
-        <p className="text-sm text-dx-muted">Cargando…</p>
+        <LoadingBlock compact label="Cargando…" />
       ) : competitionsQuery.isError ? (
         <div className="rounded-xl border border-[#f1dfa9] bg-[#fff9e8] px-3.5 py-3 text-[13px] text-[#7d5a00]">
           {(competitionsQuery.error as Error).message}
         </div>
       ) : (
-        <div className="flex flex-col gap-2.5">
-          {(competitionsQuery.data?.data ?? []).map((competition) => (
-            <Link
-              key={competition.id}
-              href={`/operacion/formula-1/${competition.id}`}
-              className="flex items-center justify-between gap-4 rounded-[14px] border border-dx-line bg-white px-[17px] py-[15px] hover:border-[#becae0]"
-            >
-              <div>
-                <div className="font-bold">{competition.name}</div>
-                <div className="mt-1 text-[13px] text-dx-muted">
-                  Temporadas · Calendario · Clasificaciones
-                </div>
-              </div>
-              <span className="text-2xl text-[#8090a8]">→</span>
-            </Link>
-          ))}
-          {(competitionsQuery.data?.data.length ?? 0) === 0 ? (
-            <p className="text-sm text-dx-muted">
-              No hay competiciones. Usa{" "}
-              <Link
-                href="/operacion/formula-1/nueva"
-                className="font-bold text-dx-blue hover:underline"
-              >
-                + Nueva competición
-              </Link>{" "}
-              para crear la primera.
-            </p>
-          ) : null}
-        </div>
+        <EditableDataTable
+          columns={columns}
+          rows={competitionsQuery.data?.data ?? []}
+          getValues={getValues}
+          rowHref={(row) => `/operacion/formula-1/${row.id}`}
+          emptyLabel="No hay competiciones. Usa + Nueva competición para crear la primera."
+        />
       )}
+
+      {(competitionsQuery.data?.data.length ?? 0) === 0 &&
+      !competitionsQuery.isLoading ? (
+        <p className="mt-3 text-sm text-dx-muted">
+          Crea la primera desde{" "}
+          <Link
+            href="/operacion/formula-1/nueva"
+            className="font-bold text-dx-blue hover:underline"
+          >
+            + Nueva competición
+          </Link>
+          .
+        </p>
+      ) : null}
 
       <Note className="mt-5">
         Flujo: Competición → Temporada → Participantes → Calendario →

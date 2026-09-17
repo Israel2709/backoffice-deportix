@@ -1,4 +1,5 @@
 "use client";
+import { LoadingBlock } from "@/components/ui/spinner";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -68,6 +69,10 @@ export function SeasonStructurePanel({ seasonId }: { seasonId: string }) {
       phase: phaseName || "Temporada Regular",
     }));
     setRows(generated);
+  }
+
+  if (roundsQuery.isLoading) {
+    return <LoadingBlock label="Cargando estructura…" />;
   }
 
   return (

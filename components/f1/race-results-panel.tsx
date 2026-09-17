@@ -1,4 +1,5 @@
 "use client";
+import { LoadingBlock } from "@/components/ui/spinner";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
@@ -129,6 +130,10 @@ export function RaceResultsPanel({
     },
     onError: (error: Error) => toast.error(error.message),
   });
+
+  if (raceQuery.isLoading || resultsQuery.isLoading) {
+    return <LoadingBlock label="Cargando resultados…" />;
+  }
 
   const race = raceQuery.data?.data;
 

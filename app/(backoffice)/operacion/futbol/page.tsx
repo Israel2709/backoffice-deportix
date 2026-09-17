@@ -1,18 +1,38 @@
 "use client";
 
+import { useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { listAdminLeagues } from "@/lib/api/admin-soccer";
+import { EditableDataTable } from "@/components/data/editable-data-table";
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { Hero } from "@/components/ui/hero";
 import { Note } from "@/components/ui/note";
 import { PageHeader } from "@/components/ui/page";
+import { LoadingBlock } from "@/components/ui/spinner";
+import { listAdminLeagues } from "@/lib/api/admin-soccer";
+import type { SoccerLeague } from "@/lib/api/soccer-types";
+
+const columns = [
+  { id: "name", header: "Nombre" },
+  { id: "name_alt", header: "Nombre alt.", placeholder: "—" },
+  { id: "type", header: "Tipo", className: "w-[140px]" },
+  { id: "country", header: "País", placeholder: "—" },
+];
 
 export default function OperacionFutbolPage() {
   const leaguesQuery = useQuery({
     queryKey: ["admin", "soccer", "leagues"],
     queryFn: listAdminLeagues,
   });
+
+  const getValues = useCallback((row: SoccerLeague) => {
+    return {
+      name: row.name ?? "",
+      name_alt: row.name_alt ?? "",
+      type: row.type ?? "",
+      country: row.country_name ?? row.country_id ?? "",
+    };
+  }, []);
 
   return (
     <>
@@ -42,41 +62,19 @@ export default function OperacionFutbolPage() {
       </PageHeader>
 
       {leaguesQuery.isLoading ? (
-        <p className="text-sm text-dx-muted">Cargando…</p>
+        <LoadingBlock compact label="Cargando…" />
       ) : leaguesQuery.isError ? (
         <div className="rounded-xl border border-[#f1dfa9] bg-[#fff9e8] px-3.5 py-3 text-[13px] text-[#7d5a00]">
           {(leaguesQuery.error as Error).message}
         </div>
       ) : (
-        <div className="flex flex-col gap-2.5">
-          {(leaguesQuery.data?.data ?? []).map((league) => (
-            <Link
-              key={league.id}
-              href={`/operacion/futbol/${league.id}`}
-              className="flex items-center justify-between gap-4 rounded-[14px] border border-dx-line bg-white px-[17px] py-[15px] hover:border-[#becae0]"
-            >
-              <div>
-                <div className="font-bold">{league.name}</div>
-                <div className="mt-1 text-[13px] text-dx-muted">
-                  {league.name_alt || league.type}
-                </div>
-              </div>
-              <span className="text-2xl text-[#8090a8]">→</span>
-            </Link>
-          ))}
-          {(leaguesQuery.data?.data.length ?? 0) === 0 ? (
-            <p className="text-sm text-dx-muted">
-              No hay competiciones. Usa{" "}
-              <Link
-                href="/operacion/futbol/nueva"
-                className="font-bold text-dx-blue hover:underline"
-              >
-                + Nueva competición
-              </Link>{" "}
-              para crear la primera.
-            </p>
-          ) : null}
-        </div>
+        <EditableDataTable
+          columns={columns}
+          rows={leaguesQuery.data?.data ?? []}
+          getValues={getValues}
+          rowHref={(row) => `/operacion/futbol/${row.id}`}
+          emptyLabel="No hay competiciones. Usa + Nueva competición para crear la primera."
+        />
       )}
 
       <Note>

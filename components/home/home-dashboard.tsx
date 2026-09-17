@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { KpiGrid } from "@/components/ui/kpi-grid";
 import { Note } from "@/components/ui/note";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { Spinner } from "@/components/ui/spinner";
 
 const SYNC_SPORTS: { id: SyncSport; label: string }[] = [
   { id: "soccer", label: "Fútbol" },
@@ -109,20 +110,22 @@ export function HomeDashboard() {
           <div>
             <h2 className="text-[21px] font-semibold">Estado de la API</h2>
             <p className="mt-2 text-sm text-dx-muted">
-              {healthQuery.isLoading
-                ? "Conectando…"
-                : healthQuery.isError
-                  ? "No se pudo conectar a deportix-api. Verifica que corra en :3001."
-                  : (
-                      <>
-                        Proyecto{" "}
-                        <strong className="text-dx-ink">
-                          {healthQuery.data?.project}
-                        </strong>{" "}
-                        · env {healthQuery.data?.firebaseEnv} · status{" "}
-                        {healthQuery.data?.status}
-                      </>
-                    )}
+              {healthQuery.isLoading ? (
+                <span className="inline-flex items-center gap-2">
+                  <Spinner size="sm" /> Conectando…
+                </span>
+              ) : healthQuery.isError ? (
+                "No se pudo conectar a la API. Verifica DEPORTIX_API_BASE_URL."
+              ) : (
+                <>
+                  Proyecto{" "}
+                  <strong className="text-dx-ink">
+                    {healthQuery.data?.project}
+                  </strong>{" "}
+                  · env {healthQuery.data?.firebaseEnv} · status{" "}
+                  {healthQuery.data?.status}
+                </>
+              )}
             </p>
           </div>
           <StatusBadge
@@ -178,9 +181,13 @@ export function HomeDashboard() {
                 disabled={syncMutation.isPending || Boolean(activeJobId)}
                 onClick={() => syncMutation.mutate(sport.id)}
               >
-                {syncMutation.isPending && syncMutation.variables === sport.id
-                  ? "Iniciando…"
-                  : "Sincronizar"}
+                {syncMutation.isPending && syncMutation.variables === sport.id ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Spinner size="sm" className="text-white" /> Iniciando…
+                  </span>
+                ) : (
+                  "Sincronizar"
+                )}
               </Button>
             </div>
           ))}

@@ -1,4 +1,5 @@
 "use client";
+import { LoadingBlock } from "@/components/ui/spinner";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
@@ -76,6 +77,10 @@ export function EditionParticipantsPanel({
     },
     onError: (error: Error) => toast.error(error.message),
   });
+
+  if (participantsQuery.isLoading || playersQuery.isLoading) {
+    return <LoadingBlock label="Cargando participantes…" />;
+  }
 
   return (
     <div className="space-y-4">

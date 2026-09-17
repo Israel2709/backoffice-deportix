@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingBlock } from "@/components/ui/spinner";
+
 import { useQuery } from "@tanstack/react-query";
 import {
   getCountries,
@@ -144,7 +146,7 @@ export function EntityList({
   });
 
   if (query.isLoading) {
-    return <p className="text-sm text-dx-muted">Cargando…</p>;
+    return <LoadingBlock compact label="Cargando…" />;
   }
 
   if (query.isError) {

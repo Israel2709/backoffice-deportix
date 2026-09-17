@@ -1,4 +1,5 @@
 "use client";
+import { LoadingBlock } from "@/components/ui/spinner";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
@@ -125,6 +126,10 @@ export function SeasonStandingsPanel({ seasonId }: { seasonId: string }) {
         return next;
       }),
     );
+  }
+
+  if (standingsQuery.isLoading || participantsQuery.isLoading) {
+    return <LoadingBlock label="Cargando clasificación…" />;
   }
 
   return (

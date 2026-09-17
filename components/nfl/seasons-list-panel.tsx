@@ -92,7 +92,7 @@ export function SeasonsListPanel({ leagueId }: { leagueId: string }) {
         {active.map((season) => (
           <Link
             key={season.id}
-            href={`/operacion/football-americano/${leagueId}/${season.id}`}
+            href={`/operacion/football-americano/${leagueId}/${encodeURIComponent(season.id)}`}
             className="flex items-center justify-between gap-4 rounded-[14px] border border-dx-line bg-white px-[17px] py-[15px] hover:border-[#becae0]"
           >
             <div>
@@ -131,7 +131,7 @@ export function SeasonsListPanel({ leagueId }: { leagueId: string }) {
             {historic.map((season) => (
               <Link
                 key={season.id}
-                href={`/operacion/football-americano/${leagueId}/${season.id}`}
+                href={`/operacion/football-americano/${leagueId}/${encodeURIComponent(season.id)}`}
                 className="text-sm text-dx-blue underline"
               >
                 {seasonLabel(season)} ·{" "}

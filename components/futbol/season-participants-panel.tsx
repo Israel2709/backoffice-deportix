@@ -80,7 +80,8 @@ export function SeasonParticipantsPanel({
             {selected.length} equipos
           </h2>
           <p className="text-sm text-dx-muted">
-            Asocia equipos maestros a esta temporada
+            Equipos de la competición (la API MVP no tiene participantes por
+            temporada; el guardado no limita el catálogo).
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

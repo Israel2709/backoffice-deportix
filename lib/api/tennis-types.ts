@@ -27,6 +27,7 @@ export interface TennisPlayer {
   status: TennisPlayerStatus;
 }
 
+/** Edition maps to BFF `/tennis/tournaments`. */
 export interface TennisEdition {
   id: string;
   tournament_name: string;
@@ -38,6 +39,7 @@ export interface TennisEdition {
   publish_status: TennisPublishStatus;
 }
 
+/** Participant maps to BFF `/tennis/entries`. */
 export interface TennisEditionParticipant {
   id: string;
   edition_id: string;

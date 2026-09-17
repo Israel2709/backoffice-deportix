@@ -12,13 +12,19 @@ async function proxyRequest<T>(
 
   if (!response.ok) {
     const body = await response.text();
-    let message = body || `Request failed (${response.status})`;
-    try {
-      const parsed = JSON.parse(body) as { error?: unknown };
-      if (typeof parsed.error === "string") message = parsed.error;
-      else if (parsed.error) message = JSON.stringify(parsed.error);
-    } catch {
-      // keep raw body
+    let message = `Request failed (${response.status})`;
+    const trimmed = body.trim();
+    if (trimmed.startsWith("<!") || trimmed.toLowerCase().includes("<html")) {
+      message = `La API respondió ${response.status} (ruta no encontrada o HTML). Verifica DEPORTIX_API_BASE_URL y que el backend exponga /${path.replace(/^\//, "")}.`;
+    } else {
+      try {
+        const parsed = JSON.parse(body) as { error?: unknown };
+        if (typeof parsed.error === "string") message = parsed.error;
+        else if (parsed.error) message = JSON.stringify(parsed.error);
+        else if (trimmed) message = trimmed;
+      } catch {
+        if (trimmed) message = trimmed.slice(0, 280);
+      }
     }
     throw new Error(message);
   }

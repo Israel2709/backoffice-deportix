@@ -10,6 +10,7 @@ export type MatchBoStatus =
   | "finished"
   | "cancelled";
 
+/** Country catalog entry. MVP keys updates by `name` (or `code`); use that as `id`. */
 export interface SoccerCountry {
   id: string;
   name: string;
@@ -17,15 +18,22 @@ export interface SoccerCountry {
   flag: string | null;
 }
 
+/**
+ * League for BO UI. `id` is String(BFF league.id) — API-Sports numeric external id
+ * when present (Firestore UUID also accepted by BFF `?id=`).
+ */
 export interface SoccerLeague {
   id: string;
   name: string;
-  name_alt?: string | null;
-  country_id: string | null;
   type: string;
   logo: string | null;
+  country_name?: string | null;
+  country_code?: string | null;
+  name_alt?: string | null;
   logo_alt?: string | null;
-  sport_id: string;
+  /** Country catalog key (name) for selects — MVP has no country UUID on leagues. */
+  country_id?: string | null;
+  sport_id?: string;
 }
 
 export interface SoccerTeam {
@@ -37,7 +45,8 @@ export interface SoccerTeam {
   status?: "active" | "inactive";
   logo_alt?: string | null;
   team: {
-    id: number;
+    /** Firestore UUID or numeric external id from BFF. */
+    id: number | string;
     name: string;
     code: string | null;
     country: string | null;
@@ -45,6 +54,7 @@ export interface SoccerTeam {
   };
 }
 
+/** Season id format: `${leagueId}:${year}` (e.g. `262:2024`). */
 export interface SoccerSeason {
   id: string;
   league_id: string;
@@ -56,6 +66,7 @@ export interface SoccerSeason {
   status?: SeasonStatus;
 }
 
+/** Synthetic — MVP has no participants resource; derived from league teams. */
 export interface SoccerParticipant {
   id: string;
   season_id: string;
@@ -63,6 +74,7 @@ export interface SoccerParticipant {
   team_id: string;
 }
 
+/** Round id = round name (BFF GET `/fixtures/rounds` returns name strings). */
 export interface SoccerRound {
   id: string;
   season_id: string;
@@ -130,3 +142,24 @@ export const MATCH_STATUS_LABEL: Record<MatchBoStatus, string> = {
   finished: "Finalizado",
   cancelled: "Cancelado",
 };
+
+export function seasonIdFor(leagueId: string, year: number): string {
+  return `${leagueId}:${year}`;
+}
+
+export function parseSeasonId(seasonId: string): { leagueId: string; year: number } {
+  const idx = seasonId.lastIndexOf(":");
+  if (idx <= 0) {
+    throw new Error(
+      `Invalid season id "${seasonId}". Expected format leagueId:year (e.g. 262:2024).`,
+    );
+  }
+  const leagueId = seasonId.slice(0, idx);
+  const year = Number(seasonId.slice(idx + 1));
+  if (!leagueId || !Number.isFinite(year)) {
+    throw new Error(
+      `Invalid season id "${seasonId}". Expected format leagueId:year (e.g. 262:2024).`,
+    );
+  }
+  return { leagueId, year };
+}

@@ -48,9 +48,12 @@ export interface F1Driver {
   photo?: string | null;
 }
 
+/** Season id format: `${competitionId}:${year}`. */
 export interface F1Season {
   id: string;
+  /** Same as competition_id — kept for UI that reads league_id. */
   league_id: string;
+  competition_id?: string;
   year: number;
   name?: string | null;
   start_date: string | null;
@@ -59,6 +62,7 @@ export interface F1Season {
   status?: SeasonStatus;
 }
 
+/** Synthetic — MVP has no season participants resource; derived from drivers. */
 export interface F1SeasonParticipant {
   id: string;
   season_id: string;
@@ -75,8 +79,10 @@ export interface F1Race {
   race_date: string;
   name?: string | null;
   status: string;
+  type?: string | null;
 }
 
+/** Sessions are not a BFF resource — stubs return empty / no-op. */
 export interface F1Session {
   id: string;
   race_id: string;
@@ -148,3 +154,27 @@ export const F1_RESULT_STATUS_LABEL: Record<F1ResultStatus, string> = {
   dns: "DNS",
   dsq: "DSQ",
 };
+
+export function seasonIdFor(competitionId: string, year: number): string {
+  return `${competitionId}:${year}`;
+}
+
+export function parseSeasonId(seasonId: string): {
+  competitionId: string;
+  year: number;
+} {
+  const idx = seasonId.lastIndexOf(":");
+  if (idx <= 0) {
+    throw new Error(
+      `Invalid season id "${seasonId}". Expected format competitionId:year.`,
+    );
+  }
+  const competitionId = seasonId.slice(0, idx);
+  const year = Number(seasonId.slice(idx + 1));
+  if (!competitionId || !Number.isFinite(year)) {
+    throw new Error(
+      `Invalid season id "${seasonId}". Expected format competitionId:year.`,
+    );
+  }
+  return { competitionId, year };
+}

@@ -1,4 +1,4 @@
-import { proxyRequest } from "./proxy-client";
+import { v1Request } from "./bff-client";
 import type {
   ApiHealth,
   IngestionJob,
@@ -6,37 +6,58 @@ import type {
   SyncSport,
 } from "./types";
 
-export function getHealth(): Promise<ApiHealth> {
-  return proxyRequest("admin/health");
+type V1Health = {
+  status?: string;
+  apiVersion?: string;
+  dataSourceConfigured?: boolean;
+  storageConfigured?: boolean;
+  timestamp?: string;
+};
+
+/** Prefer `v1/health`; map into the BO ApiHealth shape. */
+export async function getHealth(): Promise<ApiHealth> {
+  try {
+    const data = await v1Request<V1Health>("v1/health");
+    return {
+      status: data?.status ?? "ok",
+      project: "deportix-api",
+      firebaseEnv: data?.dataSourceConfigured
+        ? "configured"
+        : "not-configured",
+    };
+  } catch (error) {
+    throw error instanceof Error
+      ? error
+      : new Error("Health check failed");
+  }
 }
 
-export function startSync(
+/** MVP has no sync-admin surface. */
+export async function startSync(
   sport: SyncSport,
-  resume: boolean,
+  _resume: boolean,
 ): Promise<{ message: string; job: IngestionJob | null }> {
-  return proxyRequest("admin/sync", {
-    method: "POST",
-    body: JSON.stringify({ sport, resume }),
-  });
+  return {
+    message: `Sync "${sport}" no está disponible en la API MVP (sin admin de ingesta).`,
+    job: null,
+  };
 }
 
-export function getJob(
-  jobId: string,
+export async function getJob(
+  _jobId: string,
 ): Promise<{ job: IngestionJob; project: string }> {
-  return proxyRequest(`admin/sync/jobs/${jobId}`);
+  throw new Error("Sync jobs no están disponibles en la API MVP.");
 }
 
-export function listJobs(
-  limit = 10,
+export async function listJobs(
+  _limit = 10,
 ): Promise<{ jobs: IngestionJob[]; project: string }> {
-  return proxyRequest(`admin/sync/jobs?limit=${limit}`);
+  return { jobs: [], project: "deportix-api" };
 }
 
-export function listSyncLogs(
-  sport?: string,
-  limit = 50,
+export async function listSyncLogs(
+  _sport?: string,
+  _limit = 50,
 ): Promise<{ logs: SyncLog[] }> {
-  const params = new URLSearchParams({ limit: String(limit) });
-  if (sport) params.set("sport", sport);
-  return proxyRequest(`admin/sync/logs?${params.toString()}`);
+  return { logs: [] };
 }

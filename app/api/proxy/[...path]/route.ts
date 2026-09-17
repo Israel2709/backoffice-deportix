@@ -1,23 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const ALLOWED_PREFIXES = ["admin/", "api/"] as const;
+/** Paths allowed to be forwarded to the MVP Deportix API. */
+const ALLOWED_PREFIXES = [
+  "v1/",
+  "countries",
+  "leagues",
+  "teams",
+  "fixtures",
+  "standings",
+  "american-football/",
+  "formula-1/",
+  "tennis/",
+  // Legacy Express admin (local only) — keep for dual-mode if needed
+  "admin/",
+  "api/",
+] as const;
 
 function getConfig() {
   const baseUrl = process.env.DEPORTIX_API_BASE_URL?.replace(/\/$/, "");
-  const apiKey = process.env.ADMIN_API_KEY;
-
   if (!baseUrl) {
     throw new Error("DEPORTIX_API_BASE_URL is not configured");
   }
-  if (!apiKey) {
-    throw new Error("ADMIN_API_KEY is not configured");
-  }
-
+  // Optional — only used when forwarding legacy /admin/* to Express API
+  const apiKey = process.env.ADMIN_API_KEY;
   return { baseUrl, apiKey };
 }
 
 function assertAllowedPath(path: string) {
-  if (!ALLOWED_PREFIXES.some((prefix) => path.startsWith(prefix))) {
+  const ok = ALLOWED_PREFIXES.some(
+    (prefix) => path === prefix.replace(/\/$/, "") || path.startsWith(prefix),
+  );
+  if (!ok) {
     throw new Error(`Path not allowed: ${path}`);
   }
 }
@@ -37,8 +50,9 @@ async function forward(
     const headers = new Headers();
     const contentType = request.headers.get("content-type");
     if (contentType) headers.set("content-type", contentType);
+    headers.set("accept", "application/json");
 
-    if (path.startsWith("admin/")) {
+    if (path.startsWith("admin/") && apiKey) {
       headers.set("x-admin-api-key", apiKey);
     }
 
@@ -49,17 +63,37 @@ async function forward(
     };
 
     if (request.method !== "GET" && request.method !== "HEAD") {
-      init.body = await request.text();
+      // Preserve binary for multipart uploads
+      if (contentType?.includes("multipart/form-data")) {
+        init.body = await request.arrayBuffer();
+      } else {
+        init.body = await request.text();
+      }
     }
 
     const upstream = await fetch(target, init);
     const body = await upstream.text();
+    const upstreamType =
+      upstream.headers.get("content-type") ?? "application/json";
+
+    if (
+      !upstream.ok &&
+      (upstreamType.includes("text/html") ||
+        body.trimStart().startsWith("<!") ||
+        body.toLowerCase().includes("<html"))
+    ) {
+      return NextResponse.json(
+        {
+          error: `Upstream ${upstream.status} en ${target}. Ruta no encontrada en la API MVP.`,
+        },
+        { status: upstream.status === 404 ? 404 : 502 },
+      );
+    }
 
     return new NextResponse(body, {
       status: upstream.status,
       headers: {
-        "content-type":
-          upstream.headers.get("content-type") ?? "application/json",
+        "content-type": upstreamType,
       },
     });
   } catch (error) {

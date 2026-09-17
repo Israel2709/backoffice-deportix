@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { fileToBase64, uploadAdminImage } from "@/lib/api/admin-uploads";
+import { uploadAdminImage } from "@/lib/api/admin-uploads";
 import { Field, TextInput } from "@/components/capture/field";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -39,11 +39,9 @@ export function LogoUrlOrFileField({
 
     setUploading(true);
     try {
-      const file_base64 = await fileToBase64(file);
       const result = await uploadAdminImage({
-        content_type: file.type || "image/png",
-        file_base64,
-        folder,
+        file,
+        purpose: folder === "logos" ? "league_logo" : "logo",
         filename: file.name,
       });
       onChange(result.data.url);

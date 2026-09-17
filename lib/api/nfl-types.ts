@@ -10,6 +10,7 @@ export type GameBoStatus =
   | "finished"
   | "cancelled";
 
+/** Country catalog entry. MVP keys updates by `name` (or `code`); use that as `id`. */
 export interface NflCountry {
   id: string;
   name: string;
@@ -17,6 +18,9 @@ export interface NflCountry {
   flag: string | null;
 }
 
+/**
+ * League for BO UI. `id` is BFF league UUID (Firestore document id).
+ */
 export interface NflLeague {
   id: string;
   name: string;
@@ -26,13 +30,16 @@ export interface NflLeague {
   logo: string | null;
   logo_alt?: string | null;
   sport_id: string;
+  country_name?: string | null;
+  country_code?: string | null;
 }
 
 export interface NflTeam {
   id: string;
   league_id: string;
   team: {
-    id: number;
+    /** Firestore UUID from BFF. */
+    id: number | string;
     name: string;
     city: string | null;
     logo: string | null;
@@ -41,6 +48,7 @@ export interface NflTeam {
   division: string | null;
 }
 
+/** Season id format: `${leagueId}:${year}`. */
 export interface NflSeason {
   id: string;
   league_id: string;
@@ -52,6 +60,7 @@ export interface NflSeason {
   status?: SeasonStatus;
 }
 
+/** Synthetic — MVP has no participants resource; derived from league teams. */
 export interface NflParticipant {
   id: string;
   season_id: string;
@@ -59,6 +68,7 @@ export interface NflParticipant {
   team_id: string;
 }
 
+/** Synthetic weeks (MVP has no rounds resource). */
 export interface NflRound {
   id: string;
   season_id: string;
@@ -148,3 +158,27 @@ export const GAME_STATUS_LABEL: Record<GameBoStatus, string> = {
   finished: "Finalizado",
   cancelled: "Cancelado",
 };
+
+export function seasonIdFor(leagueId: string, year: number): string {
+  return `${leagueId}:${year}`;
+}
+
+export function parseSeasonId(seasonId: string): {
+  leagueId: string;
+  year: number;
+} {
+  const idx = seasonId.lastIndexOf(":");
+  if (idx <= 0) {
+    throw new Error(
+      `Invalid season id "${seasonId}". Expected format leagueId:year.`,
+    );
+  }
+  const leagueId = seasonId.slice(0, idx);
+  const year = Number(seasonId.slice(idx + 1));
+  if (!leagueId || !Number.isFinite(year)) {
+    throw new Error(
+      `Invalid season id "${seasonId}". Expected format leagueId:year.`,
+    );
+  }
+  return { leagueId, year };
+}

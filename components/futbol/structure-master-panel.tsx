@@ -9,6 +9,7 @@ import {
   deleteCountry,
   listAdminCountries,
   listAdminLeagues,
+  listAdminOrganizations,
   updateCountry,
   updateLeague,
 } from "@/lib/api/admin-soccer";
@@ -71,6 +72,7 @@ export function StructureMasterPanel() {
   const [leagueNameAlt, setLeagueNameAlt] = useState("");
   const [leagueCountryId, setLeagueCountryId] = useState("");
   const [leagueType, setLeagueType] = useState("League");
+  const [leagueOrganizationId, setLeagueOrganizationId] = useState("");
   const [leagueLogo, setLeagueLogo] = useState("");
   const [deletingCountryId, setDeletingCountryId] = useState<string | null>(
     null,
@@ -83,6 +85,10 @@ export function StructureMasterPanel() {
   const leaguesQuery = useQuery({
     queryKey: ["admin", "soccer", "leagues"],
     queryFn: listAdminLeagues,
+  });
+  const organizationsQuery = useQuery({
+    queryKey: ["admin", "soccer", "organizations"],
+    queryFn: () => listAdminOrganizations(),
   });
 
   const getCountryValues = useCallback((row: SoccerCountry) => {
@@ -164,6 +170,7 @@ export function StructureMasterPanel() {
         name: leagueName.trim(),
         name_alt: leagueNameAlt.trim() || null,
         country_id: leagueCountryId || null,
+        organization_id: leagueOrganizationId || null,
         type: leagueType.trim() || "League",
         logo: leagueLogo.trim() || null,
       }),
@@ -172,6 +179,7 @@ export function StructureMasterPanel() {
       setLeagueName("");
       setLeagueNameAlt("");
       setLeagueCountryId("");
+      setLeagueOrganizationId("");
       setLeagueType("League");
       setLeagueLogo("");
       void queryClient.invalidateQueries({
@@ -211,6 +219,18 @@ export function StructureMasterPanel() {
   });
 
   const countries = countriesQuery.data?.data ?? [];
+  const organizations = organizationsQuery.data?.data ?? [];
+  const organizationsForSelectedCountry = organizations.filter((org) => {
+    const country = countries.find((item) => item.id === leagueCountryId);
+    if (!country) return false;
+    const keys = [country.id, country.name, country.code]
+      .map((value) => (value ?? "").trim().toLowerCase())
+      .filter(Boolean);
+    return (
+      keys.includes((org.country_id ?? "").trim().toLowerCase()) ||
+      keys.includes((org.country_name ?? "").trim().toLowerCase())
+    );
+  });
 
   return (
     <div className="space-y-6">
@@ -264,7 +284,7 @@ export function StructureMasterPanel() {
       </Section>
 
       <Section title="Competiciones">
-        <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-[1fr_1fr_160px_120px_1fr_auto]">
+        <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-[1fr_1fr_160px_1fr_120px_1fr_auto]">
           <TextInput
             placeholder="Nombre"
             value={leagueName}
@@ -277,12 +297,26 @@ export function StructureMasterPanel() {
           />
           <TextSelect
             value={leagueCountryId}
-            onChange={(e) => setLeagueCountryId(e.target.value)}
+            onChange={(e) => {
+              setLeagueCountryId(e.target.value);
+              setLeagueOrganizationId("");
+            }}
           >
             <option value="">País…</option>
             {countries.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
+              </option>
+            ))}
+          </TextSelect>
+          <TextSelect
+            value={leagueOrganizationId}
+            onChange={(e) => setLeagueOrganizationId(e.target.value)}
+          >
+            <option value="">Organización…</option>
+            {organizationsForSelectedCountry.map((org) => (
+              <option key={org.id} value={org.id}>
+                {org.name}
               </option>
             ))}
           </TextSelect>
@@ -327,9 +361,9 @@ export function StructureMasterPanel() {
       </Section>
 
       <Note>
-        Jerarquía País → Organización → Competición: en esta fase País y
-        Competición son editables; la organización intermedia se puede modelar
-        después si App QD lo requiere.
+        Jerarquía País → Organización → Competición. Crea la organización del
+        país en Equipos y asígnala al crear la competición; las ligas sin
+        organización quedan en el grupo genérico.
       </Note>
     </div>
   );

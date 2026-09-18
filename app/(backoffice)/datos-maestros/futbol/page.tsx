@@ -34,7 +34,7 @@ export default function FutbolMaestrosPage() {
         <ClickCard
           href="/datos-maestros/futbol/equipos"
           title="Equipos"
-          description="Catálogo de equipos reutilizables entre temporadas."
+          description="País → organización → liga → equipos."
           cta="Administrar →"
         />
       </div>

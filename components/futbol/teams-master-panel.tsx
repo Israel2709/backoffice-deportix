@@ -9,7 +9,6 @@ import {
   createTeam,
   deleteTeam,
   listAdminCountries,
-  listAdminLeagues,
   listAdminTeams,
   updateTeam,
 } from "@/lib/api/admin-soccer";
@@ -61,7 +60,15 @@ function toForm(team: SoccerTeam): TeamForm {
   };
 }
 
-export function TeamsMasterPanel() {
+export function TeamsMasterPanel({
+  leagueId,
+  countryId,
+  countryName,
+}: {
+  leagueId: string;
+  countryId?: string;
+  countryName?: string;
+}) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -69,12 +76,9 @@ export function TeamsMasterPanel() {
   const [form, setForm] = useState<TeamForm>(emptyForm());
 
   const teamsQuery = useQuery({
-    queryKey: ["admin", "soccer", "teams"],
-    queryFn: () => listAdminTeams(),
-  });
-  const leaguesQuery = useQuery({
-    queryKey: ["admin", "soccer", "leagues"],
-    queryFn: listAdminLeagues,
+    queryKey: ["admin", "soccer", "teams", leagueId],
+    queryFn: () => listAdminTeams(leagueId),
+    enabled: Boolean(leagueId),
   });
   const countriesQuery = useQuery({
     queryKey: ["admin", "soccer", "countries"],
@@ -108,7 +112,7 @@ export function TeamsMasterPanel() {
         name_alt: form.name_alt.trim() || null,
         country_id: form.country_id || null,
         country_name: form.country_name.trim() || null,
-        league_id: form.league_id,
+        league_id: leagueId,
         logo: form.logo.trim() || null,
         status: form.status,
       };
@@ -123,7 +127,7 @@ export function TeamsMasterPanel() {
       setEditingId(null);
       setForm(emptyForm());
       void queryClient.invalidateQueries({
-        queryKey: ["admin", "soccer", "teams"],
+        queryKey: ["admin", "soccer", "teams", leagueId],
       });
     },
     onError: (error: Error) => toast.error(error.message),
@@ -138,7 +142,7 @@ export function TeamsMasterPanel() {
         toast.success("Equipo eliminado");
       }
       void queryClient.invalidateQueries({
-        queryKey: ["admin", "soccer", "teams"],
+        queryKey: ["admin", "soccer", "teams", leagueId],
       });
     },
     onError: (error: Error) => toast.error(error.message),
@@ -147,8 +151,12 @@ export function TeamsMasterPanel() {
   function openCreate() {
     setCreating(true);
     setEditingId(null);
-    const firstLeague = leaguesQuery.data?.data[0]?.id ?? "";
-    setForm({ ...emptyForm(), league_id: firstLeague });
+    setForm({
+      ...emptyForm(),
+      league_id: leagueId,
+      country_id: countryId ?? "",
+      country_name: countryName ?? "",
+    });
   }
 
   function openEdit(team: SoccerTeam) {
@@ -315,21 +323,6 @@ export function TeamsMasterPanel() {
                 <option value="inactive">Inactivo</option>
               </TextSelect>
             </Field>
-            <Field label="Competición de referencia">
-              <TextSelect
-                value={form.league_id}
-                onChange={(e) =>
-                  setForm({ ...form, league_id: e.target.value })
-                }
-              >
-                <option value="">Selecciona…</option>
-                {(leaguesQuery.data?.data ?? []).map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name}
-                  </option>
-                ))}
-              </TextSelect>
-            </Field>
             <Field label="Logo (URL)">
               <TextInput
                 value={form.logo}
@@ -355,7 +348,7 @@ export function TeamsMasterPanel() {
                 !form.name ||
                 !form.name_short ||
                 !form.abbreviation ||
-                !form.league_id
+                !leagueId
               }
               onClick={() => saveMutation.mutate()}
             >
@@ -366,8 +359,8 @@ export function TeamsMasterPanel() {
       ) : null}
 
       <Note>
-        El equipo se crea una sola vez y se asocia a temporadas desde Operación
-        Deportiva. Logos por URL (upload de archivo llega después).
+        Equipos de esta liga. El alta queda asociada a la liga seleccionada;
+        luego se reutilizan en Operación Deportiva.
       </Note>
     </div>
   );

@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 const ALLOWED_PREFIXES = [
   "v1/",
   "countries",
+  "organizations",
   "leagues",
   "teams",
   "fixtures",

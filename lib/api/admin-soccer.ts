@@ -11,6 +11,7 @@ import type {
   SoccerCountry,
   SoccerLeague,
   SoccerMatch,
+  SoccerOrganizationRecord,
   SoccerParticipant,
   SoccerRound,
   SoccerSeason,
@@ -55,6 +56,22 @@ type BffLeagueEntry = {
     flag?: string | null;
   };
   seasons?: BffSeasonItem[];
+  organization?: {
+    id?: string | null;
+    name?: string | null;
+    logo?: string | null;
+  } | null;
+};
+
+type BffOrganization = {
+  id: string;
+  name: string;
+  logo?: string | null;
+  country?: {
+    name?: string | null;
+    code?: string | null;
+    flag?: string | null;
+  } | null;
 };
 
 type BffTeamEntry = {
@@ -164,6 +181,19 @@ function mapLeague(entry: BffLeagueEntry, fallbackId?: string): SoccerLeague {
     country_code: entry.country?.code ?? null,
     country_id: countryName,
     sport_id: "soccer",
+    organization_id: entry.organization?.id ?? null,
+    organization_name: entry.organization?.name ?? null,
+  };
+}
+
+function mapOrganization(entry: BffOrganization): SoccerOrganizationRecord {
+  const countryName = entry.country?.name ?? null;
+  return {
+    id: entry.id,
+    name: entry.name,
+    logo: entry.logo ?? null,
+    country_id: countryName,
+    country_name: countryName,
   };
 }
 
@@ -417,15 +447,62 @@ export async function getAdminLeague(id: string): One<SoccerLeague> {
   return { data: mapLeague(entry, resolved || id) };
 }
 
+export async function listAdminOrganizations(country?: string): List<SoccerOrganizationRecord> {
+  const query = country?.trim()
+    ? `organizations?country=${encodeURIComponent(country.trim())}`
+    : "organizations";
+  try {
+    const response = await bffRequest<BffOrganization[] | BffOrganization>(query);
+    return { data: asList(response).map(mapOrganization) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (/\b404\b/.test(message) || /no encontrada/i.test(message)) {
+      return { data: [] };
+    }
+    throw error;
+  }
+}
+
+export async function createOrganization(body: {
+  name: string;
+  logo?: string | null;
+  countryName: string;
+}): One<SoccerOrganizationRecord> {
+  const name = body.name.trim();
+  if (!name) throw new Error("El nombre de la organización es obligatorio.");
+  const countryName = body.countryName.trim();
+  if (!countryName) throw new Error("El país es obligatorio.");
+
+  const response = await bffRequest<BffOrganization[] | BffOrganization>("organizations", {
+    method: "POST",
+    body: JSON.stringify({
+      name,
+      logo: body.logo?.trim() || null,
+      country: { name: countryName, code: null, flag: null },
+    }),
+  });
+  const created = firstOf(response);
+  if (!created) throw new Error("Organization create returned empty response");
+  return { data: mapOrganization(created) };
+}
+
+export async function deleteOrganization(id: string): Promise<void> {
+  await bffRequest(`organizations?id=${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
 export async function createLeague(body: {
   name: string;
   name_alt?: string | null;
   country_id?: string | null;
+  organization_id?: string | null;
   type?: string;
   logo?: string | null;
   logo_alt?: string | null;
 }): One<SoccerLeague> {
   const countryName = body.country_id?.trim() || "World";
+  const organizationId = body.organization_id?.trim();
   const response = await bffRequest<BffLeagueEntry[] | BffLeagueEntry>("leagues", {
     method: "POST",
     body: JSON.stringify({
@@ -439,6 +516,7 @@ export async function createLeague(body: {
         code: null,
         flag: null,
       },
+      ...(organizationId ? { organization: { id: organizationId } } : {}),
       seasons: [],
     }),
   });

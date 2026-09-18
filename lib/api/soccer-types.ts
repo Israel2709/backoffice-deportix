@@ -34,6 +34,17 @@ export interface SoccerLeague {
   /** Country catalog key (name) for selects — MVP has no country UUID on leagues. */
   country_id?: string | null;
   sport_id?: string;
+  /** Sports organization UUID when the league is assigned. */
+  organization_id?: string | null;
+  organization_name?: string | null;
+}
+
+export interface SoccerOrganizationRecord {
+  id: string;
+  name: string;
+  logo: string | null;
+  country_id: string | null;
+  country_name?: string | null;
 }
 
 export interface SoccerTeam {

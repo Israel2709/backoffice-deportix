@@ -33,7 +33,11 @@ const PREFIX = "formula-1";
 
 // ─── BFF raw shapes ───────────────────────────────────────────────────────────
 
-type BffCompetition = { id: string; name: string };
+type BffCompetition = {
+  id: string;
+  name: string;
+  location?: string | null;
+};
 type BffCircuit = {
   id: string;
   name: string;
@@ -91,6 +95,7 @@ function mapCompetition(c: BffCompetition): F1Competition {
     id: String(c.id),
     name: c.name,
     logo: null,
+    location: c.location ?? null,
     sport_id: "formula-1",
   };
 }

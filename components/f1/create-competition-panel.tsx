@@ -5,18 +5,27 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { createCompetition } from "@/lib/api/admin-f1";
+import { linkCompetitionToCountry } from "@/lib/f1-competition-countries";
 import { Field, TextInput } from "@/components/capture/field";
 import { Button } from "@/components/ui/button";
 import { Note } from "@/components/ui/note";
 import { Spinner } from "@/components/ui/spinner";
 
-export function CreateCompetitionPanel() {
+export function CreateCompetitionPanel({
+  countryId,
+}: {
+  countryId?: string;
+} = {}) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [form, setForm] = useState({
     name: "",
     logo: "",
   });
+
+  const backHref = countryId
+    ? `/operacion/formula-1/pais/${encodeURIComponent(countryId)}`
+    : "/operacion/formula-1";
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -25,11 +34,14 @@ export function CreateCompetitionPanel() {
         logo: form.logo.trim() || null,
       }),
     onSuccess: (result) => {
+      if (countryId) {
+        linkCompetitionToCountry(result.data.id, countryId);
+      }
       toast.success("Competición creada");
       void queryClient.invalidateQueries({
         queryKey: ["admin", "f1", "competitions"],
       });
-      router.push(`/operacion/formula-1/${result.data.id}`);
+      router.push(backHref);
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -60,7 +72,7 @@ export function CreateCompetitionPanel() {
         <div className="mt-5 flex flex-wrap gap-2">
           <Button
             variant="secondary"
-            onClick={() => router.push("/operacion/formula-1")}
+            onClick={() => router.push(backHref)}
             disabled={createMutation.isPending}
           >
             Cancelar

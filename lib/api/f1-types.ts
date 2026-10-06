@@ -22,6 +22,8 @@ export interface F1Competition {
   id: string;
   name: string;
   logo?: string | null;
+  /** Host country / location when the BFF provides it. */
+  location?: string | null;
   sport_id?: string;
 }
 

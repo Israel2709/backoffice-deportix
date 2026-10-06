@@ -31,6 +31,8 @@ type EditableDataTableProps<T extends { id: string }> = {
   onDelete?: (id: string) => void | Promise<void>;
   /** When set, rows navigate on click (browse lists). */
   rowHref?: (row: T) => string;
+  /** Show the → open button in Acciones. Defaults to true when `rowHref` is set. */
+  showOpenAction?: boolean;
   saving?: boolean;
   deletingId?: string | null;
   emptyLabel?: string;
@@ -50,12 +52,14 @@ export function EditableDataTable<T extends { id: string }>({
   onSave,
   onDelete,
   rowHref,
+  showOpenAction,
   saving = false,
   deletingId = null,
   emptyLabel = "Sin registros.",
   filterPlaceholder = "Filtrar…",
 }: EditableDataTableProps<T>) {
   const editableMode = Boolean(onSave);
+  const openAction = showOpenAction ?? Boolean(rowHref);
   const [draft, setDraft] = useState<Record<string, Record<string, string>>>(
     {},
   );
@@ -147,7 +151,7 @@ export function EditableDataTable<T extends { id: string }>({
     await onSave(changes);
   }
 
-  const showActions = Boolean(onDelete || rowHref);
+  const showActions = Boolean(onDelete || openAction);
   const colSpan = columns.length + (showActions ? 1 : 0);
 
   const SortIcon = ({ columnId }: { columnId: string }) => {
@@ -175,18 +179,25 @@ export function EditableDataTable<T extends { id: string }>({
                     col.className,
                   )}
                 >
-                  <div className="space-y-1.5">
+                  <div
+                    className={cn(
+                      "flex gap-2",
+                      col.filterable !== false
+                        ? "items-center"
+                        : "flex-col items-start gap-1.5",
+                    )}
+                  >
                     {col.sortable !== false ? (
                       <button
                         type="button"
                         onClick={() => toggleSort(col.id)}
-                        className="inline-flex items-center gap-1.5 text-[11px] font-extrabold tracking-wide text-[#667085] uppercase hover:text-dx-blue"
+                        className="inline-flex shrink-0 items-center gap-1.5 text-[11px] font-extrabold tracking-wide text-[#667085] uppercase hover:text-dx-blue"
                       >
                         {col.header}
                         <SortIcon columnId={col.id} />
                       </button>
                     ) : (
-                      <span className="text-[11px] font-extrabold tracking-wide text-[#667085] uppercase">
+                      <span className="shrink-0 text-[11px] font-extrabold tracking-wide text-[#667085] uppercase">
                         {col.header}
                       </span>
                     )}
@@ -200,7 +211,7 @@ export function EditableDataTable<T extends { id: string }>({
                           }))
                         }
                         placeholder={filterPlaceholder}
-                        className="w-full rounded-[7px] border border-[#d9e0ea] bg-white px-2 py-1 text-[12px] font-normal text-[#243147] outline-none focus:border-dx-blue"
+                        className="min-w-0 flex-1 rounded-[7px] border border-[#d9e0ea] bg-white px-2 py-1 text-[12px] font-normal text-[#243147] outline-none focus:border-dx-blue"
                       />
                     ) : null}
                   </div>
@@ -313,7 +324,7 @@ export function EditableDataTable<T extends { id: string }>({
                     {showActions ? (
                       <td className="border-b border-dx-line px-3 py-1.5 text-center">
                         <div className="inline-flex items-center justify-center gap-1">
-                          {href ? (
+                          {href && openAction ? (
                             <Link
                               href={href}
                               title="Abrir"

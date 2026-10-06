@@ -1,13 +1,23 @@
 "use client";
 
-import { useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useCallback, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
+import { toast } from "sonner";
 import { EditableDataTable } from "@/components/data/editable-data-table";
 import { Note } from "@/components/ui/note";
 import { LoadingBlock } from "@/components/ui/spinner";
-import { listAdminCompetitions } from "@/lib/api/admin-f1";
+import {
+  deleteCompetition,
+  listAdminCompetitions,
+} from "@/lib/api/admin-f1";
+import { listAdminCountries } from "@/lib/api/admin-soccer";
+import {
+  filterCompetitionsForCountry,
+  unlinkCompetitionFromCountry,
+} from "@/lib/f1-competition-countries";
 import type { F1Competition } from "@/lib/api/f1-types";
+import { findCountry } from "@/lib/api/soccer-structure";
 
 const columns = [
   { id: "name", header: "Nombre" },
@@ -19,11 +29,63 @@ const columns = [
   },
 ];
 
-export function CompetitionsListPanel() {
+export function CompetitionsListPanel({
+  countryId,
+  countryName,
+}: {
+  countryId?: string;
+  countryName?: string;
+} = {}) {
+  const queryClient = useQueryClient();
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
   const competitionsQuery = useQuery({
     queryKey: ["admin", "f1", "competitions"],
     queryFn: listAdminCompetitions,
   });
+  const countriesQuery = useQuery({
+    queryKey: ["admin", "soccer", "countries"],
+    queryFn: listAdminCountries,
+    enabled: Boolean(countryId),
+  });
+
+  const country = useMemo(() => {
+    if (!countryId) return null;
+    return (
+      findCountry(countriesQuery.data?.data ?? [], countryId) ?? {
+        id: countryId,
+        name: countryName ?? countryId,
+        code: null,
+        flag: null,
+      }
+    );
+  }, [countriesQuery.data?.data, countryId, countryName]);
+
+  const rows = useMemo(() => {
+    const all = competitionsQuery.data?.data ?? [];
+    if (!countryId || !country) return all;
+    return filterCompetitionsForCountry(all, country);
+  }, [competitionsQuery.data?.data, country, countryId]);
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteCompetition(id),
+    onMutate: (id) => setDeletingId(id),
+    onSuccess: (_data, id) => {
+      unlinkCompetitionFromCountry(id);
+      toast.success("Competición eliminada");
+      void queryClient.invalidateQueries({
+        queryKey: ["admin", "f1", "competitions"],
+      });
+    },
+    onError: (error: Error) => toast.error(error.message),
+    onSettled: () => setDeletingId(null),
+  });
+
+  const nuevaHref = countryId
+    ? `/operacion/formula-1/pais/${encodeURIComponent(countryId)}/nueva`
+    : "/operacion/formula-1/nueva";
+
+  const labelCountry = countryName ?? country?.name ?? "este país";
 
   const getValues = useCallback((row: F1Competition) => {
     return {
@@ -32,40 +94,73 @@ export function CompetitionsListPanel() {
     };
   }, []);
 
+  if (competitionsQuery.isLoading || (countryId && countriesQuery.isLoading)) {
+    return <LoadingBlock compact label="Cargando…" />;
+  }
+
+  if (competitionsQuery.isError) {
+    return (
+      <div className="rounded-xl border border-[#f1dfa9] bg-[#fff9e8] px-3.5 py-3 text-[13px] text-[#7d5a00]">
+        {(competitionsQuery.error as Error).message}
+      </div>
+    );
+  }
+
+  if (rows.length === 0) {
+    return (
+      <>
+        <div className="rounded-2xl border border-dashed border-dx-line bg-dx-card px-6 py-12 text-center shadow-[0_4px_14px_rgba(19,53,105,0.06)]">
+          <p className="text-[16px] font-semibold text-dx-ink">
+            {countryId
+              ? `${labelCountry} no cuenta con competiciones`
+              : "No hay competiciones"}
+          </p>
+          <p className="mt-2 text-[14px] text-dx-muted">
+            {countryId
+              ? "Crea la primera competición para empezar a operar temporadas en este país."
+              : "Usa + Nueva competición para crear la primera."}
+          </p>
+          <Link
+            href={nuevaHref}
+            className="mt-5 inline-flex items-center gap-2 rounded-[10px] bg-dx-blue px-[15px] py-[11px] text-sm font-bold !text-white hover:bg-dx-blue2"
+          >
+            + Crear competición
+          </Link>
+        </div>
+        <Note className="mt-5">
+          Flujo: País → Competición → Temporada → Participantes → Calendario →
+          Clasificaciones → Resultados por carrera.
+        </Note>
+      </>
+    );
+  }
+
   return (
     <>
-      {competitionsQuery.isLoading ? (
-        <LoadingBlock compact label="Cargando…" />
-      ) : competitionsQuery.isError ? (
-        <div className="rounded-xl border border-[#f1dfa9] bg-[#fff9e8] px-3.5 py-3 text-[13px] text-[#7d5a00]">
-          {(competitionsQuery.error as Error).message}
-        </div>
-      ) : (
-        <EditableDataTable
-          columns={columns}
-          rows={competitionsQuery.data?.data ?? []}
-          getValues={getValues}
-          rowHref={(row) => `/operacion/formula-1/${row.id}`}
-          emptyLabel="No hay competiciones. Usa + Nueva competición para crear la primera."
-        />
-      )}
-
-      {(competitionsQuery.data?.data.length ?? 0) === 0 &&
-      !competitionsQuery.isLoading ? (
-        <p className="mt-3 text-sm text-dx-muted">
-          Crea la primera desde{" "}
-          <Link
-            href="/operacion/formula-1/nueva"
-            className="font-bold text-dx-blue hover:underline"
-          >
-            + Nueva competición
-          </Link>
-          .
-        </p>
-      ) : null}
+      <EditableDataTable
+        columns={columns}
+        rows={rows}
+        getValues={getValues}
+        rowHref={(row) => `/operacion/formula-1/${row.id}`}
+        showOpenAction={false}
+        deletingId={deletingId}
+        emptyLabel="No hay competiciones."
+        onDelete={(id) => {
+          const competition = rows.find((row) => row.id === id);
+          const name = competition?.name ?? "esta competición";
+          if (
+            !window.confirm(
+              `¿Eliminar «${name}» de la base de datos? Esta acción no se puede deshacer.`,
+            )
+          ) {
+            return;
+          }
+          deleteMutation.mutate(id);
+        }}
+      />
 
       <Note className="mt-5">
-        Flujo: Competición → Temporada → Participantes → Calendario →
+        Flujo: País → Competición → Temporada → Participantes → Calendario →
         Clasificaciones → Resultados por carrera.
       </Note>
     </>

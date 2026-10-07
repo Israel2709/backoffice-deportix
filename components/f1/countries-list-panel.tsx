@@ -88,8 +88,8 @@ export function CountriesListPanel() {
       )}
 
       <Note className="mt-5">
-        Elige un país para ver y operar sus competiciones de Fórmula 1. Los
-        países se administran en{" "}
+        Elige un país, luego la temporada y sus competiciones. Los países se
+        administran en{" "}
         <Link href="/datos-maestros/futbol/estructura" className="underline">
           Datos Maestros · Estructura
         </Link>

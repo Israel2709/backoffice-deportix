@@ -4,15 +4,20 @@ export function Field({
   label,
   children,
   className,
+  error,
 }: {
   label: string;
   children: React.ReactNode;
   className?: string;
+  error?: string;
 }) {
   return (
     <label className={cn("flex flex-col gap-1.5", className)}>
       <span className="text-xs font-extrabold text-[#59667a]">{label}</span>
       {children}
+      {error ? (
+        <span className="text-xs font-semibold text-[#b42318]">{error}</span>
+      ) : null}
     </label>
   );
 }
@@ -30,4 +35,15 @@ export function TextSelect(
   props: React.SelectHTMLAttributes<HTMLSelectElement>,
 ) {
   return <select {...props} className={cn(inputClassName, props.className)} />;
+}
+
+export function TextArea(
+  props: React.TextareaHTMLAttributes<HTMLTextAreaElement>,
+) {
+  return (
+    <textarea
+      {...props}
+      className={cn(inputClassName, "min-h-[96px] resize-y", props.className)}
+    />
+  );
 }

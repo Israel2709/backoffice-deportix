@@ -19,7 +19,7 @@ export default function OperacionF1Page() {
         <Hero
           eyebrow="Operación · Fórmula 1"
           title="Países"
-          description="Selecciona un país de datos maestros para ver y operar sus competiciones."
+          description="Selecciona un país de datos maestros para operar por temporada y competición."
         />
       </PageHeader>
       <CountriesListPanel />

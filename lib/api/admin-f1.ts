@@ -22,6 +22,7 @@ import type {
   F1ResultStatus,
   SeasonStatus,
 } from "./f1-types";
+import type { F1CompetitionWriteBody } from "./f1-competition";
 import { parseSeasonId, seasonIdFor } from "./f1-types";
 
 export type { SeasonStatus, F1ResultStatus, F1SessionType, F1SessionBoStatus };
@@ -211,6 +212,48 @@ export async function updateCompetition(
       logo: body.logo !== undefined ? body.logo : null,
     },
   };
+}
+
+export async function getF1CompetitionDocument(
+  id: string,
+): One<Record<string, unknown>> {
+  const response = await bffRequest<Record<string, unknown>[] | Record<string, unknown>>(
+    `${PREFIX}/competitions?id=${encodeURIComponent(id)}`,
+  );
+  const found = firstOf(response);
+  if (!found) throw new Error(`Competition not found: ${id}`);
+  return { data: found as Record<string, unknown> };
+}
+
+export async function createF1CompetitionDocument(
+  body: F1CompetitionWriteBody,
+): One<F1Competition> {
+  const response = await bffRequest<BffCompetition[] | BffCompetition>(
+    `${PREFIX}/competitions`,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    },
+  );
+  const created = firstOf(response);
+  if (!created) throw new Error("Competition create returned empty response");
+  return { data: mapCompetition(created) };
+}
+
+export async function updateF1CompetitionDocument(
+  id: string,
+  body: F1CompetitionWriteBody,
+): One<F1Competition> {
+  const response = await bffRequest<BffCompetition[] | BffCompetition>(
+    `${PREFIX}/competitions?id=${encodeURIComponent(id)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    },
+  );
+  const updated = firstOf(response);
+  if (!updated) throw new Error("Competition update returned empty response");
+  return { data: mapCompetition(updated) };
 }
 
 export async function deleteCompetition(id: string): Promise<void> {
@@ -417,11 +460,20 @@ export async function deleteDriver(id: string): Promise<void> {
 
 // ─── Seasons (read-only years from BFF) ───────────────────────────────────────
 
+/** Global F1 season years available in the BFF (e.g. `[2026]`). */
+export async function listAdminSeasonYears(): Promise<{ data: number[] }> {
+  const years = await bffRequest<number[]>(`${PREFIX}/seasons`);
+  return {
+    data: asList(years)
+      .filter((y) => Number.isFinite(y))
+      .sort((a, b) => b - a),
+  };
+}
+
 export async function listAdminF1Seasons(
   competitionId?: string,
 ): List<F1Season> {
-  const years = await bffRequest<number[]>(`${PREFIX}/seasons`);
-  const yearList = asList(years).filter((y) => Number.isFinite(y));
+  const { data: yearList } = await listAdminSeasonYears();
 
   if (!competitionId) {
     const competitions = await listAdminCompetitions();
@@ -526,6 +578,14 @@ export async function replaceF1Participants(
 }
 
 // ─── Races ────────────────────────────────────────────────────────────────────
+
+/** All race sessions for a calendar year (all competitions). */
+export async function listAdminRacesBySeason(year: number): List<F1Race> {
+  const response = await bffRequest<BffRace[]>(
+    `${PREFIX}/races?season=${year}`,
+  );
+  return { data: asList(response).map(mapRace) };
+}
 
 export async function listSeasonRaces(seasonId: string): List<F1Race> {
   const { competitionId, year } = parseSeasonId(seasonId);

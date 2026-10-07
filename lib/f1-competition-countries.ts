@@ -171,3 +171,16 @@ export function filterCompetitionsForCountry<T extends CompetitionRef>(
     competitionBelongsToCountry(competition, country),
   );
 }
+
+/**
+ * Competitions of a country that have at least one race session in `year`.
+ */
+export function filterCompetitionsForCountrySeason<T extends CompetitionRef>(
+  competitions: T[],
+  country: CountryRef,
+  activeCompetitionIds: Set<string>,
+): T[] {
+  return filterCompetitionsForCountry(competitions, country).filter(
+    (competition) => activeCompetitionIds.has(competition.id),
+  );
+}

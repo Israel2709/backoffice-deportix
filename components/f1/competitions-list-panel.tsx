@@ -10,13 +10,15 @@ import { LoadingBlock } from "@/components/ui/spinner";
 import {
   deleteCompetition,
   listAdminCompetitions,
+  listAdminRacesBySeason,
 } from "@/lib/api/admin-f1";
 import { listAdminCountries } from "@/lib/api/admin-soccer";
 import {
   filterCompetitionsForCountry,
+  filterCompetitionsForCountrySeason,
   unlinkCompetitionFromCountry,
 } from "@/lib/f1-competition-countries";
-import type { F1Competition } from "@/lib/api/f1-types";
+import { seasonIdFor, type F1Competition } from "@/lib/api/f1-types";
 import { findCountry } from "@/lib/api/soccer-structure";
 
 const columns = [
@@ -32,9 +34,12 @@ const columns = [
 export function CompetitionsListPanel({
   countryId,
   countryName,
+  year,
 }: {
   countryId?: string;
   countryName?: string;
+  /** When set with countryId, only competitions with races in that season. */
+  year?: number;
 } = {}) {
   const queryClient = useQueryClient();
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -47,6 +52,11 @@ export function CompetitionsListPanel({
     queryKey: ["admin", "soccer", "countries"],
     queryFn: listAdminCountries,
     enabled: Boolean(countryId),
+  });
+  const racesQuery = useQuery({
+    queryKey: ["admin", "f1", "races", "season", year],
+    queryFn: () => listAdminRacesBySeason(year!),
+    enabled: Boolean(year),
   });
 
   const country = useMemo(() => {
@@ -61,11 +71,32 @@ export function CompetitionsListPanel({
     );
   }, [countriesQuery.data?.data, countryId, countryName]);
 
+  const activeCompetitionIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const race of racesQuery.data?.data ?? []) {
+      if (race.competition_id) ids.add(race.competition_id);
+    }
+    return ids;
+  }, [racesQuery.data?.data]);
+
   const rows = useMemo(() => {
     const all = competitionsQuery.data?.data ?? [];
     if (!countryId || !country) return all;
+    if (year) {
+      return filterCompetitionsForCountrySeason(
+        all,
+        country,
+        activeCompetitionIds,
+      );
+    }
     return filterCompetitionsForCountry(all, country);
-  }, [competitionsQuery.data?.data, country, countryId]);
+  }, [
+    activeCompetitionIds,
+    competitionsQuery.data?.data,
+    country,
+    countryId,
+    year,
+  ]);
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteCompetition(id),
@@ -76,25 +107,40 @@ export function CompetitionsListPanel({
       void queryClient.invalidateQueries({
         queryKey: ["admin", "f1", "competitions"],
       });
+      if (year) {
+        void queryClient.invalidateQueries({
+          queryKey: ["admin", "f1", "races", "season", year],
+        });
+      }
     },
     onError: (error: Error) => toast.error(error.message),
     onSettled: () => setDeletingId(null),
   });
 
-  const nuevaHref = countryId
-    ? `/operacion/formula-1/pais/${encodeURIComponent(countryId)}/nueva`
-    : "/operacion/formula-1/nueva";
+  const nuevaHref =
+    countryId && year
+      ? `/operacion/formula-1/pais/${encodeURIComponent(countryId)}/temporada/${year}/nueva`
+      : countryId
+        ? `/operacion/formula-1/pais/${encodeURIComponent(countryId)}/nueva`
+        : "/operacion/formula-1/nueva";
 
   const labelCountry = countryName ?? country?.name ?? "este país";
 
   const getValues = useCallback((row: F1Competition) => {
     return {
       name: row.name ?? "",
-      scope: "Temporadas · Calendario · Clasificaciones",
+      scope: year
+        ? `Temporada ${year} · Calendario · Clasificaciones`
+        : "Temporadas · Calendario · Clasificaciones",
     };
-  }, []);
+  }, [year]);
 
-  if (competitionsQuery.isLoading || (countryId && countriesQuery.isLoading)) {
+  const isLoading =
+    competitionsQuery.isLoading ||
+    (countryId && countriesQuery.isLoading) ||
+    (year && racesQuery.isLoading);
+
+  if (isLoading) {
     return <LoadingBlock compact label="Cargando…" />;
   }
 
@@ -106,19 +152,31 @@ export function CompetitionsListPanel({
     );
   }
 
+  if (racesQuery.isError) {
+    return (
+      <div className="rounded-xl border border-[#f1dfa9] bg-[#fff9e8] px-3.5 py-3 text-[13px] text-[#7d5a00]">
+        {(racesQuery.error as Error).message}
+      </div>
+    );
+  }
+
   if (rows.length === 0) {
     return (
       <>
         <div className="rounded-2xl border border-dashed border-dx-line bg-dx-card px-6 py-12 text-center shadow-[0_4px_14px_rgba(19,53,105,0.06)]">
           <p className="text-[16px] font-semibold text-dx-ink">
-            {countryId
-              ? `${labelCountry} no cuenta con competiciones`
-              : "No hay competiciones"}
+            {countryId && year
+              ? `${labelCountry} no tiene competiciones en ${year}`
+              : countryId
+                ? `${labelCountry} no cuenta con competiciones`
+                : "No hay competiciones"}
           </p>
           <p className="mt-2 text-[14px] text-dx-muted">
-            {countryId
-              ? "Crea la primera competición para empezar a operar temporadas en este país."
-              : "Usa + Nueva competición para crear la primera."}
+            {countryId && year
+              ? "No hay Grand Prix de este país con carreras en esa temporada."
+              : countryId
+                ? "Crea la primera competición para empezar a operar en este país."
+                : "Usa + Nueva competición para crear la primera."}
           </p>
           <Link
             href={nuevaHref}
@@ -128,8 +186,8 @@ export function CompetitionsListPanel({
           </Link>
         </div>
         <Note className="mt-5">
-          Flujo: País → Competición → Temporada → Participantes → Calendario →
-          Clasificaciones → Resultados por carrera.
+          Flujo: País → Temporada → Competición → Participantes → Calendario →
+          Clasificaciones.
         </Note>
       </>
     );
@@ -141,7 +199,17 @@ export function CompetitionsListPanel({
         columns={columns}
         rows={rows}
         getValues={getValues}
-        rowHref={(row) => `/operacion/formula-1/${row.id}`}
+        rowHref={(row) =>
+          year
+            ? `/operacion/formula-1/${row.id}/${encodeURIComponent(seasonIdFor(row.id, year))}`
+            : `/operacion/formula-1/${row.id}`
+        }
+        editHref={
+          countryId && year
+            ? (row) =>
+                `/operacion/formula-1/pais/${encodeURIComponent(countryId)}/temporada/${year}/${encodeURIComponent(row.id)}/editar`
+            : undefined
+        }
         showOpenAction={false}
         deletingId={deletingId}
         emptyLabel="No hay competiciones."
@@ -160,8 +228,8 @@ export function CompetitionsListPanel({
       />
 
       <Note className="mt-5">
-        Flujo: País → Competición → Temporada → Participantes → Calendario →
-        Clasificaciones → Resultados por carrera.
+        Flujo: País → Temporada → Competición → Participantes → Calendario →
+        Clasificaciones.
       </Note>
     </>
   );

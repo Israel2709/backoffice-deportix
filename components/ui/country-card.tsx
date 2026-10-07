@@ -6,6 +6,11 @@ export type CountryCardProps = {
   /** ISO-style country code, e.g. `al`, `dz`. */
   code?: string | null;
   imageUrl?: string | null;
+  /**
+   * Text shown in the media area when there is no `imageUrl`
+   * (defaults to the first 2 characters of code/name).
+   */
+  mediaLabel?: string | null;
   href?: string;
   className?: string;
 };
@@ -14,9 +19,12 @@ function CountryCardBody({
   name,
   code,
   imageUrl,
-}: Pick<CountryCardProps, "name" | "code" | "imageUrl">) {
+  mediaLabel,
+}: Pick<CountryCardProps, "name" | "code" | "imageUrl" | "mediaLabel">) {
   const codeLabel = code?.trim() || null;
-  const fallback = (codeLabel || name).slice(0, 2).toUpperCase();
+  const fallback =
+    mediaLabel?.trim() ||
+    (codeLabel || name).slice(0, 2).toUpperCase();
 
   return (
     <>
@@ -29,21 +37,28 @@ function CountryCardBody({
             className="absolute inset-0 h-full w-full object-cover"
           />
         ) : (
-          <span className="absolute inset-0 flex items-center justify-center text-sm font-black tracking-wide text-dx-blue">
+          <span
+            className={cn(
+              "absolute inset-0 flex items-center justify-center font-black tracking-wide text-dx-blue",
+              mediaLabel?.trim() ? "text-2xl" : "text-sm",
+            )}
+          >
             {fallback}
           </span>
         )}
       </div>
-      <div className="min-w-0 px-2 py-3 text-center">
-        <h3 className="truncate text-[15px] font-semibold leading-snug text-dx-ink">
-          {name}
-        </h3>
-        {codeLabel ? (
-          <p className="mt-1 truncate text-[12px] font-medium uppercase tracking-wide text-dx-muted">
-            {codeLabel}
-          </p>
-        ) : null}
-      </div>
+      {codeLabel || name !== fallback ? (
+        <div className="min-w-0 px-2 py-3 text-center">
+          <h3 className="truncate text-[15px] font-semibold leading-snug text-dx-ink">
+            {name}
+          </h3>
+          {codeLabel ? (
+            <p className="mt-1 truncate text-[12px] font-medium uppercase tracking-wide text-dx-muted">
+              {codeLabel}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
     </>
   );
 }
@@ -63,11 +78,17 @@ export function CountryCard({
   name,
   code,
   imageUrl,
+  mediaLabel,
   href,
   className,
 }: CountryCardProps) {
   const body = (
-    <CountryCardBody name={name} code={code} imageUrl={imageUrl} />
+    <CountryCardBody
+      name={name}
+      code={code}
+      imageUrl={imageUrl}
+      mediaLabel={mediaLabel}
+    />
   );
 
   if (href) {

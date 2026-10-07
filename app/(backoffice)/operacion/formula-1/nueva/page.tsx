@@ -1,6 +1,7 @@
-import { CreateCompetitionPanel } from "@/components/f1/create-competition-panel";
+import Link from "next/link";
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { Hero } from "@/components/ui/hero";
+import { Note } from "@/components/ui/note";
 import { PageHeader } from "@/components/ui/page";
 
 export default function NuevaCompeticionF1Page() {
@@ -20,11 +21,21 @@ export default function NuevaCompeticionF1Page() {
         <Hero
           eyebrow="Operación · Fórmula 1"
           title="Nueva competición"
-          description="Define la competición. Después podrás crear y operar sus temporadas."
+          description="La competición pertenece a una temporada ya seleccionada."
+          actions={
+            <Link
+              href="/operacion/formula-1"
+              className="inline-flex items-center gap-2 rounded-[10px] bg-dx-blue px-[15px] py-[11px] text-sm font-bold !text-white hover:bg-dx-blue2"
+            >
+              Elegir país
+            </Link>
+          }
         />
       </PageHeader>
-
-      <CreateCompetitionPanel />
+      <Note>
+        Elige un país y una temporada. Desde ahí se abre el formulario, con la
+        temporada fija.
+      </Note>
     </>
   );
 }

@@ -3,7 +3,7 @@
 import { use, useMemo } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { CompetitionsListPanel } from "@/components/f1/competitions-list-panel";
+import { CountrySeasonsPanel } from "@/components/f1/country-seasons-panel";
 import { F1_COUNTRY_RECENT_KEY } from "@/components/f1/recent-keys";
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { PageHeader } from "@/components/ui/page";
@@ -57,27 +57,19 @@ export default function OperacionF1CountryPage({
       >
         <Hero
           eyebrow="Operación · Fórmula 1"
-          title="Competiciones"
-          description={`Selecciona una competición de ${countryName} para operar temporadas: Participantes → Calendario → Clasificaciones.`}
+          title="Temporadas"
+          description={`Selecciona una temporada de ${countryName} para ver las competiciones que operan en ese año.`}
           actions={
-            <>
-              <Link
-                href="/operacion/formula-1"
-                className="inline-flex items-center gap-2 rounded-[10px] border border-[#cbd8ee] bg-white px-[15px] py-[11px] text-sm font-bold text-dx-blue hover:bg-[#f5f8ff]"
-              >
-                ← Países
-              </Link>
-              <Link
-                href={`/operacion/formula-1/pais/${encodeURIComponent(decodedCountryId)}/nueva`}
-                className="inline-flex items-center gap-2 rounded-[10px] bg-dx-blue px-[15px] py-[11px] text-sm font-bold !text-white hover:bg-dx-blue2"
-              >
-                + Nueva competición
-              </Link>
-            </>
+            <Link
+              href="/operacion/formula-1"
+              className="inline-flex items-center gap-2 rounded-[10px] border border-[#cbd8ee] bg-white px-[15px] py-[11px] text-sm font-bold text-dx-blue hover:bg-[#f5f8ff]"
+            >
+              ← Países
+            </Link>
           }
         />
       </PageHeader>
-      <CompetitionsListPanel
+      <CountrySeasonsPanel
         countryId={decodedCountryId}
         countryName={countryName}
       />

@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDown, ArrowRight, ArrowUp, ArrowUpDown, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUp, ArrowUpDown, Pencil, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,8 @@ type EditableDataTableProps<T extends { id: string }> = {
   onDelete?: (id: string) => void | Promise<void>;
   /** When set, rows navigate on click (browse lists). */
   rowHref?: (row: T) => string;
+  /** Optional edit link shown in Acciones. */
+  editHref?: (row: T) => string;
   /** Show the → open button in Acciones. Defaults to true when `rowHref` is set. */
   showOpenAction?: boolean;
   saving?: boolean;
@@ -52,6 +54,7 @@ export function EditableDataTable<T extends { id: string }>({
   onSave,
   onDelete,
   rowHref,
+  editHref,
   showOpenAction,
   saving = false,
   deletingId = null,
@@ -151,7 +154,7 @@ export function EditableDataTable<T extends { id: string }>({
     await onSave(changes);
   }
 
-  const showActions = Boolean(onDelete || openAction);
+  const showActions = Boolean(onDelete || openAction || editHref);
   const colSpan = columns.length + (showActions ? 1 : 0);
 
   const SortIcon = ({ columnId }: { columnId: string }) => {
@@ -242,6 +245,7 @@ export function EditableDataTable<T extends { id: string }>({
                   JSON.stringify(values) !==
                     JSON.stringify(baselineMap[row.id] ?? {});
                 const href = rowHref?.(row);
+                const editLink = editHref?.(row);
 
                 return (
                   <tr
@@ -324,6 +328,15 @@ export function EditableDataTable<T extends { id: string }>({
                     {showActions ? (
                       <td className="border-b border-dx-line px-3 py-1.5 text-center">
                         <div className="inline-flex items-center justify-center gap-1">
+                          {editLink ? (
+                            <Link
+                              href={editLink}
+                              title="Editar"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#8090a8] hover:bg-[#f5f8ff] hover:text-dx-blue"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Link>
+                          ) : null}
                           {href && openAction ? (
                             <Link
                               href={href}

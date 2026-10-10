@@ -27,14 +27,14 @@ export default function NuevaCompeticionF1Page() {
               href="/operacion/formula-1"
               className="inline-flex items-center gap-2 rounded-[10px] bg-dx-blue px-[15px] py-[11px] text-sm font-bold !text-white hover:bg-dx-blue2"
             >
-              Elegir país
+              Elegir temporada
             </Link>
           }
         />
       </PageHeader>
       <Note>
-        Elige un país y una temporada. Desde ahí se abre el formulario, con la
-        temporada fija.
+        Elige una temporada. Desde ahí se abre el formulario, con la temporada
+        fija.
       </Note>
     </>
   );

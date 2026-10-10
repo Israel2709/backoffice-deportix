@@ -167,7 +167,9 @@ export function RaceResultsPanel({
                 Pos.
               </th>
               <th className="border-b border-dx-line px-3 py-2.5">Piloto</th>
-              <th className="border-b border-dx-line px-3 py-2.5">Equipo</th>
+              <th className="border-b border-dx-line px-3 py-2.5">
+                Constructor
+              </th>
               <th className="border-b border-dx-line px-3 py-2.5 text-center">
                 Pts
               </th>

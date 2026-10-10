@@ -5,11 +5,13 @@ import { CompetitionForm } from "@/components/f1/competition-form";
 export function CreateCompetitionPanel({
   seasonId,
   countryId,
+  countryName,
   year,
   competitionId,
 }: {
   seasonId: string;
   countryId?: string;
+  countryName?: string;
   year?: number;
   competitionId?: string;
 }) {
@@ -17,6 +19,7 @@ export function CreateCompetitionPanel({
     <CompetitionForm
       seasonId={seasonId}
       countryId={countryId}
+      countryName={countryName}
       year={year}
       competitionId={competitionId}
     />

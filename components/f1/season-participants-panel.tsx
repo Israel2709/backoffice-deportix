@@ -1,23 +1,27 @@
 "use client";
-import { LoadingBlock } from "@/components/ui/spinner";
 
+import { LoadingBlock } from "@/components/ui/spinner";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
+  createF1Participant,
+  deleteF1Participant,
   listAdminDrivers,
   listAdminF1Teams,
   listF1Participants,
-  replaceF1Participants,
 } from "@/lib/api/admin-f1";
-import { driverDisplayName } from "@/lib/api/f1-types";
-import { useDirtyGuard } from "@/hooks/use-dirty-guard";
+import { driverDisplayName, type F1SeasonParticipant } from "@/lib/api/f1-types";
+import { EditableDataTable } from "@/components/data/editable-data-table";
+import { FilteredSelect } from "@/components/capture/filtered-select";
 import { Button } from "@/components/ui/button";
 import { Note } from "@/components/ui/note";
-import { StickyActions } from "@/components/capture/sticky-actions";
-import { TextSelect } from "@/components/capture/field";
 
-type ParticipantRow = { driver_id: string; team_id: string };
+const columns = [
+  { id: "driver", header: "Piloto" },
+  // Avoid id "constructor" — collides with Object.prototype.constructor in filters.
+  { id: "constructor_name", header: "Constructor" },
+];
 
 export function SeasonParticipantsPanel({
   seasonId,
@@ -25,10 +29,9 @@ export function SeasonParticipantsPanel({
   seasonId: string;
 }) {
   const queryClient = useQueryClient();
-  const [rows, setRows] = useState<ParticipantRow[]>([]);
-  const [baseline, setBaseline] = useState("[]");
   const [pickDriverId, setPickDriverId] = useState("");
-  const [pickTeamId, setPickTeamId] = useState("");
+  const [pickConstructorId, setPickConstructorId] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const participantsQuery = useQuery({
     queryKey: ["admin", "f1", "participants", seasonId],
@@ -38,168 +41,194 @@ export function SeasonParticipantsPanel({
     queryKey: ["admin", "f1", "drivers"],
     queryFn: () => listAdminDrivers(),
   });
-  const teamsQuery = useQuery({
+  const constructorsQuery = useQuery({
     queryKey: ["admin", "f1", "teams"],
     queryFn: listAdminF1Teams,
   });
 
-  useEffect(() => {
-    const next = (participantsQuery.data?.data ?? []).map((p) => ({
-      driver_id: p.driver_id,
-      team_id: p.team_id,
-    }));
-    setRows(next);
-    setBaseline(JSON.stringify(next));
-  }, [participantsQuery.data]);
-
-  const dirty = JSON.stringify(rows) !== baseline;
-  useDirtyGuard(dirty);
+  const rows = participantsQuery.data?.data ?? [];
 
   const driversById = useMemo(
     () => new Map((driversQuery.data?.data ?? []).map((d) => [d.id, d])),
     [driversQuery.data],
   );
-  const teamsById = useMemo(
-    () => new Map((teamsQuery.data?.data ?? []).map((t) => [t.id, t])),
-    [teamsQuery.data],
+  const constructorsById = useMemo(
+    () => new Map((constructorsQuery.data?.data ?? []).map((t) => [t.id, t])),
+    [constructorsQuery.data],
   );
 
-  const usedDriverIds = new Set(rows.map((r) => r.driver_id));
-  const availableDrivers = (driversQuery.data?.data ?? []).filter(
-    (d) => !usedDriverIds.has(d.id),
+  const usedDriverIds = useMemo(
+    () => new Set(rows.map((row) => row.driver_id)),
+    [rows],
   );
 
-  const saveMutation = useMutation({
-    mutationFn: () => replaceF1Participants(seasonId, rows),
+  const driverOptions = useMemo(
+    () =>
+      (driversQuery.data?.data ?? [])
+        .filter((d) => !usedDriverIds.has(d.id))
+        .map((d) => ({
+          value: d.id,
+          label: driverDisplayName(d),
+          meta: d.team_id
+            ? (constructorsById.get(d.team_id)?.name ?? undefined)
+            : undefined,
+        })),
+    [driversQuery.data, usedDriverIds, constructorsById],
+  );
+
+  const constructorOptions = useMemo(
+    () =>
+      (constructorsQuery.data?.data ?? []).map((t) => ({
+        value: t.id,
+        label: t.name,
+      })),
+    [constructorsQuery.data],
+  );
+
+  const invalidate = () =>
+    void queryClient.invalidateQueries({
+      queryKey: ["admin", "f1", "participants", seasonId],
+    });
+
+  const addMutation = useMutation({
+    mutationFn: () =>
+      createF1Participant(seasonId, {
+        driver_id: pickDriverId,
+        team_id: pickConstructorId,
+      }),
     onSuccess: () => {
-      toast.success("Participantes guardados");
-      setBaseline(JSON.stringify(rows));
-      void queryClient.invalidateQueries({
-        queryKey: ["admin", "f1", "participants", seasonId],
-      });
+      toast.success("Participante agregado");
+      setPickDriverId("");
+      setPickConstructorId("");
+      invalidate();
     },
     onError: (error: Error) => toast.error(error.message),
   });
 
-  if (participantsQuery.isLoading || driversQuery.isLoading) {
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteF1Participant(seasonId, id),
+    onMutate: (id) => setDeletingId(id),
+    onSuccess: () => {
+      toast.success("Participante eliminado");
+      invalidate();
+    },
+    onError: (error: Error) => toast.error(error.message),
+    onSettled: () => setDeletingId(null),
+  });
+
+  const getValues = useCallback(
+    (row: F1SeasonParticipant) => {
+      const driver = driversById.get(row.driver_id);
+      const constructor = constructorsById.get(row.team_id);
+      return {
+        driver: driver ? driverDisplayName(driver) : row.driver_id,
+        constructor_name: constructor?.name ?? row.team_id,
+      };
+    },
+    [driversById, constructorsById],
+  );
+
+  function onPickDriver(driverId: string) {
+    setPickDriverId(driverId);
+    if (!driverId) {
+      setPickConstructorId("");
+      return;
+    }
+    const driver = driversById.get(driverId);
+    if (driver?.team_id) {
+      setPickConstructorId(driver.team_id);
+    }
+  }
+
+  if (
+    participantsQuery.isLoading ||
+    driversQuery.isLoading ||
+    constructorsQuery.isLoading
+  ) {
     return <LoadingBlock label="Cargando participantes…" />;
+  }
+
+  if (participantsQuery.isError) {
+    return (
+      <div className="rounded-xl border border-[#f1dfa9] bg-[#fff9e8] px-3.5 py-3 text-[13px] text-[#7d5a00]">
+        {(participantsQuery.error as Error).message}
+      </div>
+    );
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-[21px] font-semibold">
-            {rows.length} pilotos
+            {rows.length} {rows.length === 1 ? "piloto" : "pilotos"}
           </h2>
           <p className="text-sm text-dx-muted">
-            Parejas piloto-equipo para esta temporada
+            Participantes inscritos en esta competición (piloto + constructor)
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <TextSelect
-            value={pickDriverId}
-            onChange={(e) => setPickDriverId(e.target.value)}
-            className="min-w-[180px]"
-          >
-            <option value="">Piloto…</option>
-            {availableDrivers.map((d) => (
-              <option key={d.id} value={d.id}>
-                {driverDisplayName(d)}
-              </option>
-            ))}
-          </TextSelect>
-          <TextSelect
-            value={pickTeamId}
-            onChange={(e) => setPickTeamId(e.target.value)}
-            className="min-w-[180px]"
-          >
-            <option value="">Equipo…</option>
-            {(teamsQuery.data?.data ?? []).map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </TextSelect>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="min-w-[200px]">
+            <FilteredSelect
+              value={pickDriverId}
+              options={driverOptions}
+              onChange={onPickDriver}
+              placeholder="Piloto…"
+              searchPlaceholder="Buscar piloto…"
+              emptyLabel="Sin pilotos disponibles"
+            />
+          </div>
+          <div className="min-w-[200px]">
+            <FilteredSelect
+              value={pickConstructorId}
+              options={constructorOptions}
+              onChange={setPickConstructorId}
+              placeholder="Constructor…"
+              searchPlaceholder="Buscar constructor…"
+              emptyLabel="Sin constructores"
+            />
+          </div>
           <Button
-            disabled={!pickDriverId || !pickTeamId}
-            onClick={() => {
-              setRows((prev) => [
-                ...prev,
-                { driver_id: pickDriverId, team_id: pickTeamId },
-              ]);
-              setPickDriverId("");
-              setPickTeamId("");
-            }}
+            disabled={
+              !pickDriverId || !pickConstructorId || addMutation.isPending
+            }
+            onClick={() => addMutation.mutate()}
           >
-            + Agregar
+            {addMutation.isPending ? "Agregando…" : "+ Agregar"}
           </Button>
         </div>
       </div>
 
-      <div className="flex flex-col gap-2.5">
-        {rows.map((row) => {
-          const driver = driversById.get(row.driver_id);
-          const team = teamsById.get(row.team_id);
-          return (
-            <div
-              key={row.driver_id}
-              className="flex items-center justify-between gap-4 rounded-[14px] border border-dx-line bg-white px-[17px] py-[15px]"
-            >
-              <div>
-                <h3 className="font-semibold">
-                  {driver ? driverDisplayName(driver) : row.driver_id}
-                </h3>
-                <div className="mt-1 text-[13px] text-dx-muted">
-                  {team?.name ?? row.team_id}
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <TextSelect
-                  value={row.team_id}
-                  onChange={(e) =>
-                    setRows((prev) =>
-                      prev.map((r) =>
-                        r.driver_id === row.driver_id
-                          ? { ...r, team_id: e.target.value }
-                          : r,
-                      ),
-                    )
-                  }
-                >
-                  {(teamsQuery.data?.data ?? []).map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                </TextSelect>
-                <Button
-                  variant="ghost"
-                  onClick={() =>
-                    setRows((prev) =>
-                      prev.filter((r) => r.driver_id !== row.driver_id),
-                    )
-                  }
-                >
-                  Quitar
-                </Button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      <EditableDataTable
+        columns={columns}
+        rows={rows}
+        getValues={getValues}
+        showOpenAction={false}
+        deletingId={deletingId}
+        emptyLabel="No hay participantes registrados en esta competición."
+        onDelete={(id) => {
+          const row = rows.find((item) => item.id === id);
+          const driver = row ? driversById.get(row.driver_id) : null;
+          const label = driver
+            ? driverDisplayName(driver)
+            : "este participante";
+          if (
+            !window.confirm(
+              `¿Quitar a «${label}» de esta competición?`,
+            )
+          ) {
+            return;
+          }
+          deleteMutation.mutate(id);
+        }}
+      />
 
       <Note>
-        Si falta un piloto o equipo, créalo en Datos Maestros · Fórmula 1.
+        Al elegir un piloto se precarga su constructor de datos maestros; puedes
+        cambiarlo si corre con otro. Para cambiar el constructor de alguien ya
+        inscrito, quítalo y vuelve a agregarlo. Si falta un piloto o constructor,
+        créalo en Datos Maestros · Fórmula 1.
       </Note>
-
-      <StickyActions
-        dirty={dirty}
-        saving={saveMutation.isPending}
-        saveLabel="Guardar participantes"
-        onDiscard={() => setRows(JSON.parse(baseline) as ParticipantRow[])}
-        onSave={() => saveMutation.mutate()}
-      />
     </div>
   );
 }

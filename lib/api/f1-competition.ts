@@ -38,33 +38,24 @@ export interface F1Competition {
   startDate?: Timestamp;
   endDate?: Timestamp;
 
-  rounds: number;
-
+  /** Always active for drivers and constructors. */
   classifications: {
     drivers: boolean;
     constructors: boolean;
   };
 
+  /** Sprint is always enabled. */
   sprint: {
     enabled: boolean;
-    rounds?: number;
-  };
-
-  grid: {
-    maxTeams?: number;
-    driversPerTeam?: number;
   };
 
   pointsSystemId?: string;
 
   branding?: {
     logoUrl?: string;
-    primaryColor?: string;
-    secondaryColor?: string;
   };
 
   website?: string;
-  description?: string;
 
   externalIds?: Record<string, string>;
 
@@ -75,22 +66,20 @@ export interface F1Competition {
 }
 
 /**
- * Participants live in the `entries` subcollection of a competition.
- * They are not edited on the competition form.
+ * Flat participation row for a competition season.
+ * Persisted via `/formula-1/entries` (driverId + constructor teamId).
+ * Not edited on the competition form — managed in Participantes.
  */
 export interface F1Entry {
   id: string;
-
+  competitionId: string;
+  season: number;
+  driverId: string;
+  /** Constructor for this participation. */
   teamId: string;
-
-  drivers: {
-    driverId: string;
-    number: number;
-    role: "race-driver" | "reserve-driver";
-  }[];
-
+  number?: number | null;
+  role?: "race-driver" | "reserve-driver";
   active: boolean;
-
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -114,31 +103,17 @@ export type F1CompetitionFormValues = {
   shortName: string;
   officialName: string;
   slug: string;
+  /** Master-data country id (or location label until resolved). */
+  countryId: string;
   championshipType: F1ChampionshipType;
   status: F1CompetitionStatus;
   startDate: string;
   endDate: string;
-  rounds: number;
-  classifications: {
-    drivers: boolean;
-    constructors: boolean;
-  };
-  sprint: {
-    enabled: boolean;
-    rounds: number;
-  };
-  grid: {
-    maxTeams: number;
-    driversPerTeam: number;
-  };
   pointsSystemId: string;
   branding: {
     logoUrl: string;
-    primaryColor: string;
-    secondaryColor: string;
   };
   website: string;
-  description: string;
   active: boolean;
 };
 
@@ -148,36 +123,19 @@ export function emptyCompetitionForm(): F1CompetitionFormValues {
     shortName: "",
     officialName: "",
     slug: "",
+    countryId: "",
     championshipType: "world-championship",
     status: "scheduled",
     startDate: "",
     endDate: "",
-    rounds: 0,
-    classifications: {
-      drivers: true,
-      constructors: true,
-    },
-    sprint: {
-      enabled: false,
-      rounds: 0,
-    },
-    grid: {
-      maxTeams: 0,
-      driversPerTeam: 2,
-    },
     pointsSystemId: "",
     branding: {
       logoUrl: "",
-      primaryColor: "",
-      secondaryColor: "",
     },
     website: "",
-    description: "",
     active: true,
   };
 }
-
-const HEX_COLOR = /^#[0-9A-Fa-f]{6}$/;
 
 export function slugifyCompetitionName(value: string): string {
   return value
@@ -189,6 +147,19 @@ export function slugifyCompetitionName(value: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
+/**
+ * Slug from name plus a short stable suffix (usually the competition id).
+ * Same id → same suffix, so renames stay unique without rotating the token.
+ */
+export function uniqueCompetitionSlug(
+  value: string,
+  suffixSource: string = crypto.randomUUID(),
+): string {
+  const base = slugifyCompetitionName(value) || "competition";
+  const suffix = suffixSource.replace(/-/g, "").slice(0, 8);
+  return `${base}-${suffix}`;
+}
+
 function isHttpUrl(value: string): boolean {
   try {
     const url = new URL(value);
@@ -198,66 +169,20 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
-function optionalPositiveInt(value: number, label: string, errors: Record<string, string>, key: string) {
-  if (value === 0) return;
-  if (!Number.isInteger(value) || value < 1) {
-    errors[key] = `${label} debe ser un entero mayor o igual a 1.`;
-  }
-}
-
 export function validateCompetitionForm(
   values: F1CompetitionFormValues,
 ): Record<string, string> {
   const errors: Record<string, string> = {};
 
   if (!values.name.trim()) errors.name = "El nombre es obligatorio.";
-  if (!values.slug.trim()) errors.slug = "El slug es obligatorio.";
-
-  if (!Number.isInteger(values.rounds) || values.rounds < 1) {
-    errors.rounds = "El número de rondas debe ser al menos 1.";
-  }
+  if (!values.countryId.trim()) errors.countryId = "El país es obligatorio.";
 
   if (values.startDate && values.endDate && values.startDate > values.endDate) {
     errors.endDate = "La fecha de fin debe ser igual o posterior a la de inicio.";
   }
 
-  if (values.sprint.enabled) {
-    if (!Number.isInteger(values.sprint.rounds) || values.sprint.rounds < 1) {
-      errors["sprint.rounds"] = "Indica cuántas rondas sprint hay.";
-    } else if (values.sprint.rounds > values.rounds) {
-      errors["sprint.rounds"] =
-        "Las rondas sprint no pueden superar las rondas de la competición.";
-    }
-  }
-
-  optionalPositiveInt(
-    values.grid.maxTeams,
-    "El máximo de equipos",
-    errors,
-    "grid.maxTeams",
-  );
-  optionalPositiveInt(
-    values.grid.driversPerTeam,
-    "Los pilotos por equipo",
-    errors,
-    "grid.driversPerTeam",
-  );
-
   if (values.website.trim() && !isHttpUrl(values.website.trim())) {
     errors.website = "Ingresa una URL válida (http o https).";
-  }
-
-  if (
-    values.branding.primaryColor.trim() &&
-    !HEX_COLOR.test(values.branding.primaryColor.trim())
-  ) {
-    errors["branding.primaryColor"] = "Usa el formato hexadecimal #RRGGBB.";
-  }
-  if (
-    values.branding.secondaryColor.trim() &&
-    !HEX_COLOR.test(values.branding.secondaryColor.trim())
-  ) {
-    errors["branding.secondaryColor"] = "Usa el formato hexadecimal #RRGGBB.";
   }
 
   return errors;
@@ -266,10 +191,6 @@ export function validateCompetitionForm(
 function emptyToNull(value: string): string | null {
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
-}
-
-function positiveOrNull(value: number): number | null {
-  return Number.isInteger(value) && value >= 1 ? value : null;
 }
 
 /** Body sent to the API. Timestamps, id and externalIds stay on the server. */
@@ -282,25 +203,32 @@ export type F1CompetitionWriteBody = {
   status: F1CompetitionStatus;
   startDate: string | null;
   endDate: string | null;
-  rounds: number;
   classifications: F1Competition["classifications"];
-  sprint: { enabled: boolean; rounds?: number | null };
-  grid: { maxTeams: number | null; driversPerTeam: number | null };
+  sprint: { enabled: true };
   pointsSystemId: string | null;
   branding: {
     logoUrl: string | null;
-    primaryColor: string | null;
-    secondaryColor: string | null;
   };
   website: string | null;
-  description: string | null;
   active: boolean;
   seasonId?: string;
+  location?: { country?: string | null; city?: string | null } | null;
 };
 
 export function toCompetitionWriteBody(
   values: F1CompetitionFormValues,
-  options: { mode: "create"; seasonId: string } | { mode: "update" },
+  options:
+    | {
+        mode: "create";
+        seasonId: string;
+        countryName?: string;
+        countryId?: string;
+      }
+    | {
+        mode: "update";
+        countryName?: string;
+        countryId?: string;
+      },
 ): F1CompetitionWriteBody {
   const body: F1CompetitionWriteBody = {
     name: values.name.trim(),
@@ -311,30 +239,32 @@ export function toCompetitionWriteBody(
     status: values.status,
     startDate: values.startDate || null,
     endDate: values.endDate || null,
-    rounds: values.rounds,
     classifications: {
-      drivers: values.classifications.drivers,
-      constructors: values.classifications.constructors,
+      drivers: true,
+      constructors: true,
     },
-    sprint: values.sprint.enabled
-      ? { enabled: true, rounds: values.sprint.rounds }
-      : { enabled: false, rounds: null },
-    grid: {
-      maxTeams: positiveOrNull(values.grid.maxTeams),
-      driversPerTeam: positiveOrNull(values.grid.driversPerTeam),
-    },
+    sprint: { enabled: true },
     pointsSystemId: emptyToNull(values.pointsSystemId),
     branding: {
       logoUrl: emptyToNull(values.branding.logoUrl),
-      primaryColor: emptyToNull(values.branding.primaryColor),
-      secondaryColor: emptyToNull(values.branding.secondaryColor),
     },
     website: emptyToNull(values.website),
-    description: emptyToNull(values.description),
     active: values.active,
   };
 
-  if (options.mode === "create") body.seasonId = options.seasonId;
+  if (options.mode === "create") {
+    body.seasonId = options.seasonId;
+  }
+
+  const countryLabel =
+    options.countryName?.trim() ||
+    options.countryId?.trim() ||
+    values.countryId.trim() ||
+    "";
+  if (countryLabel) {
+    body.location = { country: countryLabel, city: null };
+  }
+
   return body;
 }
 
@@ -352,10 +282,6 @@ function asDateInput(value: unknown): string {
   return value.slice(0, 10);
 }
 
-function asInt(value: unknown, fallback: number): number {
-  return typeof value === "number" && Number.isInteger(value) ? value : fallback;
-}
-
 const CHAMPIONSHIP_TYPES = new Set<F1ChampionshipType>([
   "world-championship",
   "national-championship",
@@ -370,14 +296,17 @@ const STATUSES = new Set<F1CompetitionStatus>([
   "cancelled",
 ]);
 
+function locationCountryLabel(raw: unknown): string {
+  if (typeof raw === "string") return raw.trim();
+  const location = asRecord(raw);
+  return asString(location?.country).trim();
+}
+
 export function competitionToForm(raw: unknown): F1CompetitionFormValues {
   const doc = asRecord(raw);
   const base = emptyCompetitionForm();
   if (!doc) return base;
 
-  const classifications = asRecord(doc.classifications);
-  const sprint = asRecord(doc.sprint);
-  const grid = asRecord(doc.grid);
   const branding = asRecord(doc.branding);
   const championshipType = asString(doc.championshipType);
   const status = asString(doc.status);
@@ -387,6 +316,7 @@ export function competitionToForm(raw: unknown): F1CompetitionFormValues {
     shortName: asString(doc.shortName),
     officialName: asString(doc.officialName),
     slug: asString(doc.slug),
+    countryId: locationCountryLabel(doc.location),
     championshipType: CHAMPIONSHIP_TYPES.has(championshipType as F1ChampionshipType)
       ? (championshipType as F1ChampionshipType)
       : base.championshipType,
@@ -395,33 +325,11 @@ export function competitionToForm(raw: unknown): F1CompetitionFormValues {
       : base.status,
     startDate: asDateInput(doc.startDate),
     endDate: asDateInput(doc.endDate),
-    rounds: asInt(doc.rounds, 0),
-    classifications: {
-      drivers:
-        typeof classifications?.drivers === "boolean"
-          ? classifications.drivers
-          : true,
-      constructors:
-        typeof classifications?.constructors === "boolean"
-          ? classifications.constructors
-          : true,
-    },
-    sprint: {
-      enabled: sprint?.enabled === true,
-      rounds: asInt(sprint?.rounds, 0),
-    },
-    grid: {
-      maxTeams: asInt(grid?.maxTeams, 0),
-      driversPerTeam: asInt(grid?.driversPerTeam, 2),
-    },
     pointsSystemId: asString(doc.pointsSystemId),
     branding: {
       logoUrl: asString(branding?.logoUrl),
-      primaryColor: asString(branding?.primaryColor),
-      secondaryColor: asString(branding?.secondaryColor),
     },
     website: asString(doc.website),
-    description: asString(doc.description),
     active: typeof doc.active === "boolean" ? doc.active : true,
   };
 }

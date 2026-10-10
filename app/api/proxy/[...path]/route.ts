@@ -52,6 +52,11 @@ async function forward(
     const contentType = request.headers.get("content-type");
     if (contentType) headers.set("content-type", contentType);
     headers.set("accept", "application/json");
+    // Admin BO must see writes immediately; bypass Vercel CDN copies of BFF GETs.
+    if (request.method === "GET" || request.method === "HEAD") {
+      headers.set("cache-control", "no-cache");
+      headers.set("pragma", "no-cache");
+    }
 
     if (path.startsWith("admin/") && apiKey) {
       headers.set("x-admin-api-key", apiKey);

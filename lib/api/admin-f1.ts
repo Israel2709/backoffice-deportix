@@ -37,7 +37,9 @@ const PREFIX = "formula-1";
 type BffCompetition = {
   id: string;
   name: string;
-  location?: string | null;
+  location?: string | { country?: string | null; city?: string | null } | null;
+  seasonId?: string | null;
+  branding?: { logoUrl?: string | null } | null;
 };
 type BffCircuit = {
   id: string;
@@ -91,12 +93,21 @@ function firstOf<T>(value: T | T[] | null | undefined): T | undefined {
   return asList(value)[0];
 }
 
+function mapCompetitionLocation(
+  location: BffCompetition["location"],
+): string | null {
+  if (location == null) return null;
+  if (typeof location === "string") return location || null;
+  return location.country?.trim() || location.city?.trim() || null;
+}
+
 function mapCompetition(c: BffCompetition): F1Competition {
   return {
     id: String(c.id),
     name: c.name,
-    logo: null,
-    location: c.location ?? null,
+    logo: c.branding?.logoUrl ?? null,
+    location: mapCompetitionLocation(c.location),
+    seasonId: c.seasonId ?? null,
     sport_id: "formula-1",
   };
 }
@@ -163,8 +174,24 @@ function buildSeason(
 
 // ─── Competitions ─────────────────────────────────────────────────────────────
 
-export async function listAdminCompetitions(): List<F1Competition> {
-  const response = await bffRequest<BffCompetition[]>(`${PREFIX}/competitions`);
+export type ListCompetitionsFilters = {
+  /** Year matching competition `seasonId` (e.g. 2026). */
+  season?: number;
+  /** Match against `location.country` (case-insensitive substring). */
+  country?: string;
+};
+
+export async function listAdminCompetitions(
+  filters: ListCompetitionsFilters = {},
+): List<F1Competition> {
+  const params = new URLSearchParams();
+  if (filters.season != null) params.set("season", String(filters.season));
+  if (filters.country?.trim()) params.set("country", filters.country.trim());
+  // Bypass Vercel CDN copies of BFF list GETs so BO creates/edits show up.
+  params.set("_cb", String(Date.now()));
+  const response = await bffRequest<BffCompetition[]>(
+    `${PREFIX}/competitions?${params.toString()}`,
+  );
   return { data: asList(response).map(mapCompetition) };
 }
 
@@ -550,30 +577,143 @@ export async function updateF1Season(
   return getAdminF1Season(id);
 }
 
-// ─── Participants (stub from drivers) ─────────────────────────────────────────
+// ─── Participants (competition entries: driver + constructor) ─────────────────
+
+type BffEntry = {
+  id: string;
+  competitionId: string;
+  season: number;
+  driver: { id: string; name?: string; number?: number | null };
+  team: { id: string; name?: string };
+  number?: number | null;
+  role?: "race-driver" | "reserve-driver";
+  active?: boolean;
+};
+
+function mapEntry(
+  entry: BffEntry,
+  seasonId: string,
+): F1SeasonParticipant {
+  return {
+    id: String(entry.id),
+    season_id: seasonId,
+    competition_id: String(entry.competitionId),
+    driver_id: String(entry.driver.id),
+    team_id: String(entry.team.id),
+    number: entry.number ?? entry.driver.number ?? null,
+    role: entry.role ?? "race-driver",
+  };
+}
 
 export async function listF1Participants(
   seasonId: string,
 ): List<F1SeasonParticipant> {
-  const { competitionId } = parseSeasonId(seasonId);
-  const drivers = await listAdminDrivers();
+  const { competitionId, year } = parseSeasonId(seasonId);
+  const response = await bffRequest<BffEntry[]>(
+    `${PREFIX}/entries?competition=${encodeURIComponent(competitionId)}&season=${year}`,
+  );
   return {
-    data: drivers.data
-      .filter((d) => d.team_id)
-      .map((d) => ({
-        id: `${seasonId}:${d.id}`,
-        season_id: seasonId,
-        competition_id: competitionId,
-        driver_id: d.id,
-        team_id: d.team_id!,
-      })),
+    data: asList(response).map((entry) => mapEntry(entry, seasonId)),
   };
 }
 
+export async function createF1Participant(
+  seasonId: string,
+  body: {
+    driver_id: string;
+    team_id: string;
+    number?: number | null;
+    role?: "race-driver" | "reserve-driver";
+  },
+): One<F1SeasonParticipant> {
+  const { competitionId, year } = parseSeasonId(seasonId);
+  const response = await bffRequest<BffEntry[] | BffEntry>(`${PREFIX}/entries`, {
+    method: "POST",
+    body: JSON.stringify({
+      competitionId,
+      season: year,
+      driverId: body.driver_id,
+      teamId: body.team_id,
+      number: body.number ?? null,
+      role: body.role ?? "race-driver",
+    }),
+  });
+  const created = firstOf(response);
+  if (!created) throw new Error("Entry create returned empty response");
+  return { data: mapEntry(created, seasonId) };
+}
+
+export async function updateF1Participant(
+  seasonId: string,
+  entryId: string,
+  body: Partial<{
+    team_id: string;
+    number: number | null;
+    role: "race-driver" | "reserve-driver";
+    active: boolean;
+  }>,
+): One<F1SeasonParticipant> {
+  const patch: Record<string, unknown> = {};
+  if (body.team_id !== undefined) patch.teamId = body.team_id;
+  if (body.number !== undefined) patch.number = body.number;
+  if (body.role !== undefined) patch.role = body.role;
+  if (body.active !== undefined) patch.active = body.active;
+
+  const response = await bffRequest<BffEntry[] | BffEntry>(
+    `${PREFIX}/entries?id=${encodeURIComponent(entryId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    },
+  );
+  const updated = firstOf(response);
+  if (!updated) throw new Error("Entry update returned empty response");
+  return { data: mapEntry(updated, seasonId) };
+}
+
+export async function deleteF1Participant(
+  _seasonId: string,
+  entryId: string,
+): Promise<void> {
+  await bffRequest(`${PREFIX}/entries?id=${encodeURIComponent(entryId)}`, {
+    method: "DELETE",
+  });
+}
+
+/** Replace-all helper for panels that still batch-save. */
 export async function replaceF1Participants(
   seasonId: string,
-  _participants: Array<{ driver_id: string; team_id: string }>,
+  participants: Array<{ driver_id: string; team_id: string }>,
 ): List<F1SeasonParticipant> {
+  const current = await listF1Participants(seasonId);
+  const currentIds = new Set(current.data.map((row) => row.id));
+  const nextKeys = new Set(
+    participants.map((row) => `${row.driver_id}:${row.team_id}`),
+  );
+
+  for (const row of current.data) {
+    const key = `${row.driver_id}:${row.team_id}`;
+    if (!nextKeys.has(key)) {
+      await deleteF1Participant(seasonId, row.id);
+      currentIds.delete(row.id);
+    }
+  }
+
+  const remaining = await listF1Participants(seasonId);
+  const remainingDrivers = new Set(remaining.data.map((row) => row.driver_id));
+  for (const row of participants) {
+    if (remainingDrivers.has(row.driver_id)) {
+      const existing = remaining.data.find((r) => r.driver_id === row.driver_id);
+      if (existing && existing.team_id !== row.team_id) {
+        await updateF1Participant(seasonId, existing.id, {
+          team_id: row.team_id,
+        });
+      }
+      continue;
+    }
+    await createF1Participant(seasonId, row);
+  }
+
   return listF1Participants(seasonId);
 }
 

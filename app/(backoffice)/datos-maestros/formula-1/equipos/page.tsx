@@ -12,15 +12,15 @@ export default function F1EquiposPage() {
             items={[
               { label: "Datos Maestros", href: "/datos-maestros" },
               { label: "Fórmula 1", href: "/datos-maestros/formula-1" },
-              { label: "Equipos" },
+              { label: "Constructores" },
             ]}
           />
         }
       >
         <Hero
-          eyebrow="F1 · Equipos"
-          title="Equipos"
-          description="Catálogo maestro de escuderías."
+          eyebrow="F1 · Constructores"
+          title="Constructores"
+          description="Catálogo maestro de escuderías / constructores."
         />
       </PageHeader>
       <TeamsMasterPanel />

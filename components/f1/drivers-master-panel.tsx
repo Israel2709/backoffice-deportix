@@ -214,7 +214,7 @@ export function DriversMasterPanel() {
                 onChange={(e) => setForm({ ...form, number: e.target.value })}
               />
             </Field>
-            <Field label="Equipo">
+            <Field label="Constructor">
               <TextSelect
                 value={form.team_id}
                 onChange={(e) => setForm({ ...form, team_id: e.target.value })}
@@ -261,8 +261,8 @@ export function DriversMasterPanel() {
       ) : null}
 
       <Note>
-        El equipo del piloto es referencia maestra; en cada temporada se confirma
-        la pareja piloto-equipo en Participantes.
+        El constructor del piloto es referencia maestra; en cada competición se
+        confirma la pareja piloto-constructor en Participantes.
       </Note>
     </div>
   );

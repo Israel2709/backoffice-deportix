@@ -5,6 +5,7 @@ import { use } from "react";
 import { getAdminCompetition, getAdminF1Season } from "@/lib/api/admin-f1";
 import {
   SEASON_STATUS_LABEL,
+  parseSeasonId,
   seasonLabel,
 } from "@/lib/api/f1-types";
 import { F1SeasonTabs } from "@/components/capture/f1-season-tabs";
@@ -31,6 +32,13 @@ export default function F1SeasonLayout({
 
   const competitionName = competitionQuery.data?.data.name ?? "Competición";
   const season = seasonQuery.data?.data;
+  let routeSeason = "Temporada";
+  try {
+    routeSeason = String(parseSeasonId(seasonId).year);
+  } catch {
+    routeSeason = "Temporada";
+  }
+  const seasonText = season ? seasonLabel(season) : routeSeason;
 
   return (
     <>
@@ -44,7 +52,7 @@ export default function F1SeasonLayout({
                 label: competitionName,
                 href: `/operacion/formula-1/${competitionId}`,
               },
-              { label: season ? seasonLabel(season) : "Temporada" },
+              { label: seasonText },
             ]}
           />
         }
@@ -53,10 +61,10 @@ export default function F1SeasonLayout({
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <div className="text-xs font-extrabold tracking-[0.06em] text-dx-blue uppercase">
-                {competitionName}
+                Fórmula 1
               </div>
               <h1 className="mt-2 mb-2 text-[30px] font-semibold text-dx-ink">
-                {season ? seasonLabel(season) : "Temporada"}
+                {competitionName} - {seasonText}
               </h1>
               <p className="text-[15px] text-dx-muted">
                 Captura consolidada de la temporada F1.

@@ -1,26 +1,29 @@
 "use client";
 
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   CountryCard,
   CountryCardsGrid,
 } from "@/components/ui/country-card";
+import { RecentlyVisited } from "@/components/ui/recently-visited";
 import { Note } from "@/components/ui/note";
 import { LoadingBlock } from "@/components/ui/spinner";
+import { useRecentVisits } from "@/hooks/use-recent-visits";
 import { listAdminSeasonYears } from "@/lib/api/admin-f1";
+import { F1_SEASON_RECENT_KEY } from "@/components/f1/recent-keys";
 
-export function CountrySeasonsPanel({
-  countryId,
-}: {
-  countryId: string;
-  countryName: string;
-}) {
+export function SeasonsYearsPanel() {
+  const { items: recentSeasons } = useRecentVisits(F1_SEASON_RECENT_KEY);
   const seasonsQuery = useQuery({
     queryKey: ["admin", "f1", "season-years"],
     queryFn: listAdminSeasonYears,
   });
 
-  const years = seasonsQuery.data?.data ?? [];
+  const years = useMemo(
+    () => [...(seasonsQuery.data?.data ?? [])].sort((a, b) => b - a),
+    [seasonsQuery.data?.data],
+  );
 
   if (seasonsQuery.isLoading) {
     return <LoadingBlock compact label="Cargando temporadas…" />;
@@ -46,7 +49,7 @@ export function CountrySeasonsPanel({
           </p>
         </div>
         <Note className="mt-5">
-          Flujo: País → Temporada → Competición → Participantes → Calendario →
+          Flujo: Temporada → Competición → Participantes → Calendario →
           Clasificaciones.
         </Note>
       </>
@@ -55,18 +58,23 @@ export function CountrySeasonsPanel({
 
   return (
     <>
+      {recentSeasons.length > 0 ? (
+        <div className="mb-4">
+          <RecentlyVisited items={recentSeasons} />
+        </div>
+      ) : null}
       <CountryCardsGrid>
         {years.map((year) => (
           <CountryCard
             key={year}
-            href={`/operacion/formula-1/pais/${encodeURIComponent(countryId)}/temporada/${year}`}
+            href={`/operacion/formula-1/temporada/${year}`}
             name={String(year)}
             mediaLabel={String(year)}
           />
         ))}
       </CountryCardsGrid>
       <Note className="mt-5">
-        Flujo: País → Temporada → Competición → Participantes → Calendario →
+        Flujo: Temporada → Competición → Participantes → Calendario →
         Clasificaciones.
       </Note>
     </>

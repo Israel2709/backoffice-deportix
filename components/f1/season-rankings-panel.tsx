@@ -65,7 +65,16 @@ export function SeasonRankingsPanel({ seasonId }: { seasonId: string }) {
   );
 
   useEffect(() => {
-    const rankings = driverRankingsQuery.data?.data ?? [];
+    const participants = participantsQuery.data?.data ?? [];
+    if (participants.length === 0) {
+      setDriverRows([]);
+      setDriverBaseline("[]");
+      return;
+    }
+    const participantIds = new Set(participants.map((p) => p.driver_id));
+    const rankings = (driverRankingsQuery.data?.data ?? []).filter((r) =>
+      participantIds.has(r.driver_id),
+    );
     if (rankings.length > 0) {
       const next = rankings.map((r) => ({
         driver_id: r.driver_id,
@@ -76,8 +85,6 @@ export function SeasonRankingsPanel({ seasonId }: { seasonId: string }) {
       setDriverBaseline(JSON.stringify(next));
       return;
     }
-    const participants = participantsQuery.data?.data ?? [];
-    if (participants.length === 0) return;
     const next = participants.map((p, index) => ({
       driver_id: p.driver_id,
       position: index + 1,
@@ -88,7 +95,17 @@ export function SeasonRankingsPanel({ seasonId }: { seasonId: string }) {
   }, [driverRankingsQuery.data, participantsQuery.data]);
 
   useEffect(() => {
-    const rankings = teamRankingsQuery.data?.data ?? [];
+    const participants = participantsQuery.data?.data ?? [];
+    const teamIds = [...new Set(participants.map((p) => p.team_id))];
+    if (teamIds.length === 0) {
+      setTeamRows([]);
+      setTeamBaseline("[]");
+      return;
+    }
+    const teamIdSet = new Set(teamIds);
+    const rankings = (teamRankingsQuery.data?.data ?? []).filter((r) =>
+      teamIdSet.has(r.team_id),
+    );
     if (rankings.length > 0) {
       const next = rankings.map((r) => ({
         team_id: r.team_id,
@@ -99,9 +116,6 @@ export function SeasonRankingsPanel({ seasonId }: { seasonId: string }) {
       setTeamBaseline(JSON.stringify(next));
       return;
     }
-    const participants = participantsQuery.data?.data ?? [];
-    const teamIds = [...new Set(participants.map((p) => p.team_id))];
-    if (teamIds.length === 0) return;
     const next = teamIds.map((teamId, index) => ({
       team_id: teamId,
       position: index + 1,
@@ -131,7 +145,7 @@ export function SeasonRankingsPanel({ seasonId }: { seasonId: string }) {
   const saveTeamsMutation = useMutation({
     mutationFn: () => replaceTeamRankings(seasonId, teamRows),
     onSuccess: () => {
-      toast.success("Clasificación de equipos guardada");
+      toast.success("Clasificación de constructores guardada");
       setTeamBaseline(JSON.stringify(teamRows));
       void queryClient.invalidateQueries({
         queryKey: ["admin", "f1", "team-rankings", seasonId],
@@ -169,7 +183,7 @@ export function SeasonRankingsPanel({ seasonId }: { seasonId: string }) {
             variant={tab === "teams" ? "primary" : "secondary"}
             onClick={() => setTab("teams")}
           >
-            Equipos
+            Constructores
           </Button>
         </div>
       </div>
@@ -250,7 +264,9 @@ export function SeasonRankingsPanel({ seasonId }: { seasonId: string }) {
                 <th className="border-b border-dx-line px-3 py-2.5 text-center">
                   Pos.
                 </th>
-                <th className="border-b border-dx-line px-3 py-2.5">Equipo</th>
+                <th className="border-b border-dx-line px-3 py-2.5">
+                  Constructor
+                </th>
                 <th className="border-b border-dx-line px-3 py-2.5 text-center">
                   Pts
                 </th>
@@ -319,7 +335,7 @@ export function SeasonRankingsPanel({ seasonId }: { seasonId: string }) {
         saveLabel={
           tab === "drivers"
             ? "Guardar clasificación pilotos"
-            : "Guardar clasificación equipos"
+            : "Guardar clasificación constructores"
         }
         onDiscard={() => {
           if (tab === "drivers") {

@@ -21,7 +21,7 @@ export default function F1MaestrosPage() {
         <Hero
           eyebrow="Datos Maestros · Fórmula 1"
           title="Fórmula 1"
-          description="Circuitos, equipos y pilotos. La relación piloto–equipo es por temporada (Operación)."
+          description="Circuitos, constructores y pilotos. La pareja piloto–constructor se confirma por competición (Operación)."
         />
       </PageHeader>
 
@@ -33,7 +33,7 @@ export default function F1MaestrosPage() {
         />
         <ClickCard
           href="/datos-maestros/formula-1/equipos"
-          title="Equipos"
+          title="Constructores"
           description="Escuderías reutilizables."
         />
         <ClickCard

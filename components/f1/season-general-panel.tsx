@@ -126,12 +126,22 @@ export function SeasonGeneralPanel({ seasonId }: { seasonId: string }) {
         items={[
           {
             label: "Participantes",
-            value: participantsQuery.data?.data.length ?? "—",
+            value: participantsQuery.data?.data.length ?? 0,
           },
           { label: "Carreras", value: races.length || "—" },
           {
             label: "Ranking pilotos",
-            value: rankingsQuery.data?.data.length ?? "—",
+            value: (() => {
+              const participantIds = new Set(
+                (participantsQuery.data?.data ?? []).map((p) => p.driver_id),
+              );
+              if (participantIds.size === 0) return 0;
+              const rankings = rankingsQuery.data?.data ?? [];
+              const scoped = rankings.filter((r) =>
+                participantIds.has(r.driver_id),
+              );
+              return scoped.length || 0;
+            })(),
           },
           { label: "Año", value: season?.year ?? "—" },
         ]}
@@ -182,7 +192,10 @@ export function SeasonGeneralPanel({ seasonId }: { seasonId: string }) {
         <div className="space-y-2">
           {(participantsQuery.data?.data.length ?? 0) > 0 ? (
             <div className="rounded-xl border border-[#c8eadc] bg-[#edf9f4] px-3.5 py-3 text-[13px] text-[#17684d]">
-              ✓ Hay participantes asociados
+              ✓ {(participantsQuery.data?.data.length ?? 0)} participante
+              {(participantsQuery.data?.data.length ?? 0) === 1 ? "" : "s"}{" "}
+              inscrito
+              {(participantsQuery.data?.data.length ?? 0) === 1 ? "" : "s"}
             </div>
           ) : (
             <div className="rounded-xl border border-[#f1dfa9] bg-[#fff9e8] px-3.5 py-3 text-[13px] text-[#7d5a00]">

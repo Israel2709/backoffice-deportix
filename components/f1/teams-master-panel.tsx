@@ -53,7 +53,9 @@ export function TeamsMasterPanel() {
       return createF1Team(payload);
     },
     onSuccess: () => {
-      toast.success(editingId ? "Equipo actualizado" : "Equipo creado");
+      toast.success(
+        editingId ? "Constructor actualizado" : "Constructor creado",
+      );
       setCreating(false);
       setEditingId(null);
       setForm(emptyForm());
@@ -65,7 +67,7 @@ export function TeamsMasterPanel() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteF1Team(id),
     onSuccess: () => {
-      toast.success("Equipo eliminado");
+      toast.success("Constructor eliminado");
       void queryClient.invalidateQueries({ queryKey: ["admin", "f1", "teams"] });
     },
     onError: (error: Error) => toast.error(error.message),
@@ -75,9 +77,9 @@ export function TeamsMasterPanel() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-[21px] font-semibold">Catálogo de equipos</h2>
+          <h2 className="text-[21px] font-semibold">Catálogo de constructores</h2>
           <p className="text-sm text-dx-muted">
-            {teams.length} equipos · buscar / editar / + nuevo
+            {teams.length} constructores · buscar / editar / + nuevo
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -94,7 +96,7 @@ export function TeamsMasterPanel() {
               setForm(emptyForm());
             }}
           >
-            + Nuevo equipo
+            + Nuevo constructor
           </Button>
         </div>
       </div>
@@ -143,7 +145,7 @@ export function TeamsMasterPanel() {
                   onClick={() => {
                     if (
                       confirm(
-                        "¿Eliminar este equipo? Fallará si hay pilotos o participantes asociados.",
+                        "¿Eliminar este constructor? Fallará si hay pilotos o participantes asociados.",
                       )
                     ) {
                       deleteMutation.mutate(team.id);
@@ -161,7 +163,7 @@ export function TeamsMasterPanel() {
       {creating ? (
         <div className="rounded-2xl border border-dx-line bg-dx-card p-5">
           <h3 className="text-lg font-semibold">
-            {editingId ? "Editar equipo" : "Nuevo equipo"}
+            {editingId ? "Editar constructor" : "Nuevo constructor"}
           </h3>
           <div className="mt-3.5 grid grid-cols-1 gap-3.5 md:grid-cols-2">
             <Field label="Nombre">
@@ -200,8 +202,8 @@ export function TeamsMasterPanel() {
       ) : null}
 
       <Note>
-        Los equipos se asignan a pilotos y a parejas piloto-equipo en cada
-        temporada.
+        Los constructores se asignan a pilotos en datos maestros y se confirman
+        al inscribir participantes en cada competición.
       </Note>
     </div>
   );

@@ -32,6 +32,12 @@ const COMPETITION_COUNTRY_ALIASES: Record<string, string[]> = {
   my: ["malaysian"],
 };
 
+type CompetitionCountryLink = {
+  countryId: string;
+  /** Season year when the competition was created from BO (e.g. "2026"). */
+  seasonId?: string;
+};
+
 function normalize(value: string | null | undefined): string {
   return (value ?? "")
     .normalize("NFD")
@@ -48,7 +54,21 @@ function safeDecode(value: string): string {
   }
 }
 
-function readMap(): Record<string, string> {
+function parseLink(raw: unknown): CompetitionCountryLink | null {
+  if (typeof raw === "string" && raw) {
+    return { countryId: raw };
+  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const countryId = (raw as { countryId?: unknown }).countryId;
+  if (typeof countryId !== "string" || !countryId) return null;
+  const seasonId = (raw as { seasonId?: unknown }).seasonId;
+  return {
+    countryId,
+    seasonId: typeof seasonId === "string" && seasonId ? seasonId : undefined,
+  };
+}
+
+function readMap(): Record<string, CompetitionCountryLink> {
   if (typeof window === "undefined") return {};
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -57,12 +77,13 @@ function readMap(): Record<string, string> {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return {};
     }
-    const result: Record<string, string> = {};
-    for (const [competitionId, countryId] of Object.entries(
+    const result: Record<string, CompetitionCountryLink> = {};
+    for (const [competitionId, value] of Object.entries(
       parsed as Record<string, unknown>,
     )) {
-      if (typeof competitionId === "string" && typeof countryId === "string") {
-        result[competitionId] = countryId;
+      const link = parseLink(value);
+      if (typeof competitionId === "string" && link) {
+        result[competitionId] = link;
       }
     }
     return result;
@@ -71,7 +92,7 @@ function readMap(): Record<string, string> {
   }
 }
 
-function writeMap(map: Record<string, string>) {
+function writeMap(map: Record<string, CompetitionCountryLink>) {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
@@ -83,10 +104,16 @@ function writeMap(map: Record<string, string>) {
 export function linkCompetitionToCountry(
   competitionId: string,
   countryId: string,
+  seasonId?: string | number,
 ) {
   if (!competitionId || !countryId) return;
   const map = readMap();
-  map[competitionId] = countryId;
+  map[competitionId] = {
+    countryId,
+    ...(seasonId != null && String(seasonId)
+      ? { seasonId: String(seasonId) }
+      : {}),
+  };
   writeMap(map);
 }
 
@@ -101,7 +128,13 @@ export function unlinkCompetitionFromCountry(competitionId: string) {
 export function getCompetitionCountryId(
   competitionId: string,
 ): string | undefined {
-  return readMap()[competitionId];
+  return readMap()[competitionId]?.countryId;
+}
+
+export function getCompetitionSeasonLink(
+  competitionId: string,
+): string | undefined {
+  return readMap()[competitionId]?.seasonId;
 }
 
 type CountryRef = { id: string; name: string; code?: string | null };
@@ -110,6 +143,7 @@ type CompetitionRef = {
   id: string;
   name?: string | null;
   location?: string | null;
+  seasonId?: string | null;
 };
 
 function countryKeys(country: CountryRef): string[] {
@@ -142,7 +176,9 @@ function textIncludesToken(haystack: string, token: string): boolean {
 function linkedToCountry(competitionId: string, country: CountryRef): boolean {
   const linked = readMap()[competitionId];
   if (!linked) return false;
-  return countryKeys(country).includes(normalize(safeDecode(linked)));
+  return countryKeys(country).includes(
+    normalize(safeDecode(linked.countryId)),
+  );
 }
 
 export function competitionBelongsToCountry(
@@ -150,7 +186,12 @@ export function competitionBelongsToCountry(
   country: CountryRef,
 ): boolean {
   const location = normalize(competition.location);
-  if (location && countryKeys(country).some((key) => location.includes(key) || key.includes(location))) {
+  if (
+    location &&
+    countryKeys(country).some(
+      (key) => location.includes(key) || key.includes(location),
+    )
+  ) {
     return true;
   }
 
@@ -172,15 +213,32 @@ export function filterCompetitionsForCountry<T extends CompetitionRef>(
   );
 }
 
+function matchesSeasonYear(
+  competition: CompetitionRef,
+  year: number,
+): boolean {
+  const yearLabel = String(year);
+  if (competition.seasonId != null && String(competition.seasonId) === yearLabel) {
+    return true;
+  }
+  const linkedSeason = getCompetitionSeasonLink(competition.id);
+  return linkedSeason === yearLabel;
+}
+
 /**
- * Competitions of a country that have at least one race session in `year`.
+ * Competitions of a country for a season year.
+ * Includes races already scheduled in that year, plus BO-created competitions
+ * linked to the country/season (even before they have races).
  */
 export function filterCompetitionsForCountrySeason<T extends CompetitionRef>(
   competitions: T[],
   country: CountryRef,
   activeCompetitionIds: Set<string>,
+  year: number,
 ): T[] {
   return filterCompetitionsForCountry(competitions, country).filter(
-    (competition) => activeCompetitionIds.has(competition.id),
+    (competition) =>
+      activeCompetitionIds.has(competition.id) ||
+      matchesSeasonYear(competition, year),
   );
 }

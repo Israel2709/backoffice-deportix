@@ -24,6 +24,8 @@ export interface F1Competition {
   logo?: string | null;
   /** Host country / location when the BFF provides it. */
   location?: string | null;
+  /** Season year (or season document id) this competition belongs to. */
+  seasonId?: string | null;
   sport_id?: string;
 }
 
@@ -64,13 +66,16 @@ export interface F1Season {
   status?: SeasonStatus;
 }
 
-/** Synthetic — MVP has no season participants resource; derived from drivers. */
+/** Competition-season entry: driver paired with constructor for this edition. */
 export interface F1SeasonParticipant {
   id: string;
   season_id: string;
   competition_id: string;
   driver_id: string;
+  /** Constructor id for this participation (may differ from driver master team). */
   team_id: string;
+  number?: number | null;
+  role?: "race-driver" | "reserve-driver";
 }
 
 export interface F1Race {
@@ -161,18 +166,34 @@ export function seasonIdFor(competitionId: string, year: number): string {
   return `${competitionId}:${year}`;
 }
 
+function decodeRouteParam(value: string): string {
+  let current = value;
+  for (let i = 0; i < 2; i++) {
+    if (!current.includes("%")) return current;
+    try {
+      const next = decodeURIComponent(current);
+      if (next === current) return current;
+      current = next;
+    } catch {
+      return current;
+    }
+  }
+  return current;
+}
+
 export function parseSeasonId(seasonId: string): {
   competitionId: string;
   year: number;
 } {
-  const idx = seasonId.lastIndexOf(":");
+  const decoded = decodeRouteParam(seasonId);
+  const idx = decoded.lastIndexOf(":");
   if (idx <= 0) {
     throw new Error(
       `Invalid season id "${seasonId}". Expected format competitionId:year.`,
     );
   }
-  const competitionId = seasonId.slice(0, idx);
-  const year = Number(seasonId.slice(idx + 1));
+  const competitionId = decoded.slice(0, idx);
+  const year = Number(decoded.slice(idx + 1));
   if (!competitionId || !Number.isFinite(year)) {
     throw new Error(
       `Invalid season id "${seasonId}". Expected format competitionId:year.`,

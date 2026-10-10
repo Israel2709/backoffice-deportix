@@ -59,41 +59,43 @@ export function LogoUrlOrFileField({
 
   return (
     <div className={cn("space-y-3 md:col-span-2", className)}>
-      <Field label={`${label} (URL)`}>
-        <TextInput
-          value={value}
-          placeholder="https://…"
-          onChange={(e) => {
-            onChange(e.target.value);
-            setFileName(null);
-          }}
-        />
-      </Field>
-
-      <Field label="O subir archivo">
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            ref={inputRef}
-            type="file"
-            accept={ACCEPTED}
-            className="hidden"
-            onChange={(e) => void handleFile(e.target.files?.[0])}
+      <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2">
+        <Field label={`${label} (URL)`}>
+          <TextInput
+            value={value}
+            placeholder="https://…"
+            onChange={(e) => {
+              onChange(e.target.value);
+              setFileName(null);
+            }}
           />
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={uploading}
-            onClick={() => inputRef.current?.click()}
-          >
-            {uploading ? "Subiendo…" : "Elegir archivo"}
-          </Button>
-          <span className="text-[13px] text-dx-muted">
-            {fileName
-              ? fileName
-              : "PNG, JPG, WEBP, GIF o SVG · máx. 2 MB"}
-          </span>
-        </div>
-      </Field>
+        </Field>
+
+        <Field label="O subir archivo">
+          <div className="flex min-h-[46px] flex-wrap items-center gap-2">
+            <input
+              ref={inputRef}
+              type="file"
+              accept={ACCEPTED}
+              className="hidden"
+              onChange={(e) => void handleFile(e.target.files?.[0])}
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={uploading}
+              onClick={() => inputRef.current?.click()}
+            >
+              {uploading ? "Subiendo…" : "Elegir archivo"}
+            </Button>
+            <span className="min-w-0 truncate text-[13px] text-dx-muted">
+              {fileName
+                ? fileName
+                : "PNG, JPG, WEBP, GIF o SVG · máx. 2 MB"}
+            </span>
+          </div>
+        </Field>
+      </div>
 
       {value ? (
         <div className="flex items-center gap-3 rounded-[12px] border border-dx-line bg-[#f8fafc] px-3 py-2.5">

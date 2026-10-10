@@ -47,6 +47,22 @@ function cellKey(rowId: string, columnId: string) {
   return `${rowId}:${columnId}`;
 }
 
+function asFilterText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value == null) return "";
+  return String(value);
+}
+
+/** Own-property only — avoids Object.prototype keys like `constructor`. */
+function ownString(
+  map: Record<string, string>,
+  key: string,
+): string {
+  return Object.prototype.hasOwnProperty.call(map, key)
+    ? asFilterText(map[key])
+    : "";
+}
+
 export function EditableDataTable<T extends { id: string }>({
   columns,
   rows,
@@ -67,14 +83,21 @@ export function EditableDataTable<T extends { id: string }>({
     {},
   );
   const [baseline, setBaseline] = useState("{}");
-  const [filters, setFilters] = useState<Record<string, string>>({});
+  const [filters, setFilters] = useState<Record<string, string>>(() =>
+    Object.create(null) as Record<string, string>,
+  );
   const [sort, setSort] = useState<SortState>(null);
   const [focused, setFocused] = useState<string | null>(null);
 
   useEffect(() => {
     const next: Record<string, Record<string, string>> = {};
     for (const row of rows) {
-      next[row.id] = getValues(row);
+      const values = getValues(row);
+      const normalized: Record<string, string> = {};
+      for (const [key, value] of Object.entries(values)) {
+        normalized[key] = asFilterText(value);
+      }
+      next[row.id] = normalized;
     }
     setDraft(next);
     setBaseline(JSON.stringify(next));
@@ -93,10 +116,10 @@ export function EditableDataTable<T extends { id: string }>({
 
     for (const col of columns) {
       if (col.filterable === false) continue;
-      const q = (filters[col.id] ?? "").trim().toLowerCase();
+      const q = ownString(filters, col.id).trim().toLowerCase();
       if (!q) continue;
       list = list.filter((row) => {
-        const value = (draft[row.id]?.[col.id] ?? "").toLowerCase();
+        const value = ownString(draft[row.id] ?? {}, col.id).toLowerCase();
         return value.includes(q);
       });
     }
@@ -104,8 +127,8 @@ export function EditableDataTable<T extends { id: string }>({
     if (sort) {
       const { columnId, direction } = sort;
       list.sort((a, b) => {
-        const av = (draft[a.id]?.[columnId] ?? "").toLowerCase();
-        const bv = (draft[b.id]?.[columnId] ?? "").toLowerCase();
+        const av = ownString(draft[a.id] ?? {}, columnId).toLowerCase();
+        const bv = ownString(draft[b.id] ?? {}, columnId).toLowerCase();
         const cmp = av.localeCompare(bv, "es", { sensitivity: "base" });
         return direction === "asc" ? cmp : -cmp;
       });
@@ -206,12 +229,16 @@ export function EditableDataTable<T extends { id: string }>({
                     )}
                     {col.filterable !== false ? (
                       <input
-                        value={filters[col.id] ?? ""}
+                        value={ownString(filters, col.id)}
                         onChange={(e) =>
-                          setFilters((prev) => ({
-                            ...prev,
-                            [col.id]: e.target.value,
-                          }))
+                          setFilters((prev) => {
+                            const next = Object.assign(
+                              Object.create(null) as Record<string, string>,
+                              prev,
+                            );
+                            next[col.id] = String(e.target.value ?? "");
+                            return next;
+                          })
                         }
                         placeholder={filterPlaceholder}
                         className="min-w-0 flex-1 rounded-[7px] border border-[#d9e0ea] bg-white px-2 py-1 text-[12px] font-normal text-[#243147] outline-none focus:border-dx-blue"

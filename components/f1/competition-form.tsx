@@ -2,14 +2,15 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   Field,
-  TextArea,
   TextInput,
   TextSelect,
 } from "@/components/capture/field";
+import { FilteredSelect } from "@/components/capture/filtered-select";
+import { LogoUrlOrFileField } from "@/components/capture/logo-url-or-file-field";
 import { Button } from "@/components/ui/button";
 import { Note } from "@/components/ui/note";
 import { LoadingBlock, Spinner } from "@/components/ui/spinner";
@@ -23,13 +24,15 @@ import {
   F1_COMPETITION_STATUS_LABEL,
   competitionToForm,
   emptyCompetitionForm,
-  slugifyCompetitionName,
   toCompetitionWriteBody,
+  uniqueCompetitionSlug,
   validateCompetitionForm,
   type F1ChampionshipType,
   type F1CompetitionFormValues,
   type F1CompetitionStatus,
 } from "@/lib/api/f1-competition";
+import { listAdminCountries } from "@/lib/api/admin-soccer";
+import { findCountry } from "@/lib/api/soccer-structure";
 import { linkCompetitionToCountry } from "@/lib/f1-competition-countries";
 import { cn } from "@/lib/utils";
 
@@ -77,67 +80,39 @@ function ToggleRow({
   );
 }
 
-function ColorField({
-  label,
-  value,
-  error,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  error?: string;
-  onChange: (value: string) => void;
-}) {
-  const pickerValue = /^#[0-9A-Fa-f]{6}$/.test(value) ? value : "#133569";
-  return (
-    <Field label={label} error={error}>
-      <div className="flex items-center gap-2">
-        <input
-          type="color"
-          aria-label={label}
-          value={pickerValue}
-          onChange={(event) => onChange(event.target.value.toUpperCase())}
-          className="h-11 w-12 cursor-pointer rounded-[9px] border border-[#d7dee9] bg-white p-1"
-        />
-        <TextInput
-          value={value}
-          placeholder="#RRGGBB"
-          spellCheck={false}
-          onChange={(event) => onChange(event.target.value)}
-          className={cn("flex-1", error && "border-[#f04438]")}
-        />
-      </div>
-    </Field>
-  );
-}
-
 export function CompetitionForm({
   seasonId,
   countryId,
+  countryName,
   year,
   competitionId,
 }: {
   /** Selected season. Not editable in the form. */
   seasonId: string;
   countryId?: string;
+  countryName?: string;
   year?: number;
   competitionId?: string;
 }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const isEdit = Boolean(competitionId);
-  const [form, setForm] = useState<F1CompetitionFormValues>(emptyCompetitionForm);
+  const [form, setForm] = useState<F1CompetitionFormValues>(() => ({
+    ...emptyCompetitionForm(),
+    countryId: countryId ?? "",
+  }));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
-  const slugEdited = useRef(false);
   const hydrated = useRef(false);
 
-  const backHref =
-    countryId && year
-      ? `/operacion/formula-1/pais/${encodeURIComponent(countryId)}/temporada/${year}`
-      : countryId
-        ? `/operacion/formula-1/pais/${encodeURIComponent(countryId)}`
-        : "/operacion/formula-1";
+  const backHref = year
+    ? `/operacion/formula-1/temporada/${year}`
+    : "/operacion/formula-1";
+
+  const countriesQuery = useQuery({
+    queryKey: ["admin", "soccer", "countries"],
+    queryFn: listAdminCountries,
+  });
 
   const competitionQuery = useQuery({
     queryKey: ["admin", "f1", "competition-document", competitionId],
@@ -145,13 +120,59 @@ export function CompetitionForm({
     enabled: isEdit,
   });
 
+  const countries = useMemo(
+    () =>
+      [...(countriesQuery.data?.data ?? [])].sort((a, b) =>
+        a.name.localeCompare(b.name, "es"),
+      ),
+    [countriesQuery.data?.data],
+  );
+
+  const countryOptions = useMemo(
+    () =>
+      countries.map((country) => ({
+        value: country.id,
+        label: country.name,
+        meta: country.code ?? undefined,
+      })),
+    [countries],
+  );
+
+  const selectedCountry = useMemo(
+    () => findCountry(countries, form.countryId),
+    [countries, form.countryId],
+  );
+
   useEffect(() => {
     const doc = competitionQuery.data?.data;
     if (!doc || hydrated.current) return;
-    setForm(competitionToForm(doc));
-    slugEdited.current = true;
+    const next = competitionToForm(doc);
+    if (countryId && !next.countryId) next.countryId = countryId;
+    setForm(next);
     hydrated.current = true;
-  }, [competitionQuery.data]);
+  }, [competitionQuery.data, countryId]);
+
+  useEffect(() => {
+    if (!form.countryId || countries.length === 0) return;
+    const found = findCountry(countries, form.countryId);
+    if (found && found.id !== form.countryId) {
+      setForm((current) => ({ ...current, countryId: found.id }));
+    }
+  }, [countries, form.countryId]);
+
+  useEffect(() => {
+    if (isEdit || hydrated.current || !countryId) return;
+    const found =
+      findCountry(countries, countryId) ??
+      (countryName ? findCountry(countries, countryName) : undefined);
+    if (found) {
+      setForm((current) =>
+        current.countryId === found.id
+          ? current
+          : { ...current, countryId: found.id },
+      );
+    }
+  }, [countries, countryId, countryName, isEdit]);
 
   function patch(partial: Partial<F1CompetitionFormValues>) {
     setForm((current) => ({ ...current, ...partial }));
@@ -172,19 +193,46 @@ export function CompetitionForm({
       if (!isEdit && !seasonId.trim()) {
         throw new Error("Falta la temporada seleccionada.");
       }
+      const resolvedCountry =
+        findCountry(countries, form.countryId) ?? selectedCountry;
+      if (!resolvedCountry) {
+        setErrors((current) => ({
+          ...current,
+          countryId: "Selecciona un país de la lista.",
+        }));
+        throw new Error("Selecciona un país de la lista.");
+      }
+      const countryPayload = {
+        countryName: resolvedCountry.name,
+        countryId: resolvedCountry.id,
+      };
+      // Slug is hidden: derived from name + stable competition id suffix.
+      const values: F1CompetitionFormValues = {
+        ...form,
+        slug: uniqueCompetitionSlug(
+          form.name,
+          isEdit && competitionId ? competitionId : crypto.randomUUID(),
+        ),
+      };
       if (isEdit && competitionId) {
         return updateF1CompetitionDocument(
           competitionId,
-          toCompetitionWriteBody(form, { mode: "update" }),
+          toCompetitionWriteBody(values, { mode: "update", ...countryPayload }),
         );
       }
       return createF1CompetitionDocument(
-        toCompetitionWriteBody(form, { mode: "create", seasonId }),
+        toCompetitionWriteBody(values, {
+          mode: "create",
+          seasonId,
+          ...countryPayload,
+        }),
       );
     },
     onSuccess: (result) => {
-      if (!isEdit && countryId) {
-        linkCompetitionToCountry(result.data.id, countryId);
+      const resolvedId =
+        findCountry(countries, form.countryId)?.id ?? form.countryId;
+      if (resolvedId) {
+        linkCompetitionToCountry(result.data.id, resolvedId, year ?? seasonId);
       }
       toast.success(isEdit ? "Competición actualizada" : "Competición creada");
       void queryClient.invalidateQueries({
@@ -198,8 +246,16 @@ export function CompetitionForm({
     onError: (error: Error) => toast.error(error.message),
   });
 
-  if (isEdit && competitionQuery.isLoading) {
+  if (countriesQuery.isLoading || (isEdit && competitionQuery.isLoading)) {
     return <LoadingBlock compact label="Cargando competición…" />;
+  }
+
+  if (countriesQuery.isError) {
+    return (
+      <div className="rounded-xl border border-[#f1dfa9] bg-[#fff9e8] px-3.5 py-3 text-[13px] text-[#7d5a00]">
+        {(countriesQuery.error as Error).message}
+      </div>
+    );
   }
 
   if (isEdit && competitionQuery.isError) {
@@ -237,15 +293,7 @@ export function CompetitionForm({
                 placeholder="Mexico Grand Prix"
                 autoFocus={!isEdit}
                 className={cn(invalid("name") && "border-[#f04438]")}
-                onChange={(event) => {
-                  const name = event.target.value;
-                  patch({
-                    name,
-                    slug: slugEdited.current
-                      ? form.slug
-                      : slugifyCompetitionName(name),
-                  });
-                }}
+                onChange={(event) => patch({ name: event.target.value })}
               />
             </Field>
             <Field label="Nombre corto" error={invalid("shortName")}>
@@ -264,16 +312,15 @@ export function CompetitionForm({
                 }
               />
             </Field>
-            <Field label="Slug" error={invalid("slug")}>
-              <TextInput
-                value={form.slug}
-                placeholder="mexico-grand-prix"
-                spellCheck={false}
-                className={cn(invalid("slug") && "border-[#f04438]")}
-                onChange={(event) => {
-                  slugEdited.current = true;
-                  patch({ slug: event.target.value });
-                }}
+            <Field label="País" error={invalid("countryId")}>
+              <FilteredSelect
+                value={selectedCountry?.id ?? form.countryId}
+                options={countryOptions}
+                placeholder="Selecciona un país"
+                searchPlaceholder="Buscar país…"
+                emptyLabel="Ningún país coincide con la búsqueda."
+                invalid={Boolean(invalid("countryId"))}
+                onChange={(nextCountryId) => patch({ countryId: nextCountryId })}
               />
             </Field>
           </div>
@@ -334,161 +381,17 @@ export function CompetitionForm({
                 onChange={(event) => patch({ endDate: event.target.value })}
               />
             </Field>
-            <Field label="Número de rondas" error={invalid("rounds")}>
-              <TextInput
-                type="number"
-                min={1}
-                step={1}
-                value={form.rounds}
-                className={cn(invalid("rounds") && "border-[#f04438]")}
-                onChange={(event) =>
-                  patch({ rounds: Number(event.target.value) })
-                }
-              />
-            </Field>
-            <Field label="Sistema de puntos">
-              <TextInput
-                value={form.pointsSystemId}
-                placeholder="Identificador del sistema de puntos"
-                onChange={(event) =>
-                  patch({ pointsSystemId: event.target.value })
-                }
-              />
-            </Field>
-          </div>
-        </Section>
-
-        <Section title="Clasificaciones">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <ToggleRow
-              label="Campeonato de pilotos"
-              checked={form.classifications.drivers}
-              onChange={(drivers) =>
-                patch({
-                  classifications: { ...form.classifications, drivers },
-                })
-              }
-            />
-            <ToggleRow
-              label="Campeonato de constructores"
-              checked={form.classifications.constructors}
-              onChange={(constructors) =>
-                patch({
-                  classifications: { ...form.classifications, constructors },
-                })
-              }
-            />
-          </div>
-        </Section>
-
-        <Section title="Sprint">
-          <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2">
-            <ToggleRow
-              label="Sprint habilitado"
-              checked={form.sprint.enabled}
-              onChange={(enabled) =>
-                patch({ sprint: { ...form.sprint, enabled } })
-              }
-            />
-            {form.sprint.enabled ? (
-              <Field label="Rondas sprint" error={invalid("sprint.rounds")}>
-                <TextInput
-                  type="number"
-                  min={1}
-                  step={1}
-                  value={form.sprint.rounds}
-                  className={cn(invalid("sprint.rounds") && "border-[#f04438]")}
-                  onChange={(event) =>
-                    patch({
-                      sprint: {
-                        ...form.sprint,
-                        rounds: Number(event.target.value),
-                      },
-                    })
-                  }
-                />
-              </Field>
-            ) : null}
-          </div>
-        </Section>
-
-        <Section title="Parrilla">
-          <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2">
-            <Field label="Máximo de equipos" error={invalid("grid.maxTeams")}>
-              <TextInput
-                type="number"
-                min={1}
-                step={1}
-                value={form.grid.maxTeams > 0 ? form.grid.maxTeams : ""}
-                placeholder="Opcional"
-                className={cn(invalid("grid.maxTeams") && "border-[#f04438]")}
-                onChange={(event) => {
-                  const raw = event.target.value;
-                  patch({
-                    grid: {
-                      ...form.grid,
-                      maxTeams: raw === "" ? 0 : Number(raw),
-                    },
-                  });
-                }}
-              />
-            </Field>
-            <Field
-              label="Pilotos por equipo"
-              error={invalid("grid.driversPerTeam")}
-            >
-              <TextInput
-                type="number"
-                min={1}
-                step={1}
-                value={
-                  form.grid.driversPerTeam > 0 ? form.grid.driversPerTeam : ""
-                }
-                placeholder="Opcional"
-                className={cn(
-                  invalid("grid.driversPerTeam") && "border-[#f04438]",
-                )}
-                onChange={(event) => {
-                  const raw = event.target.value;
-                  patch({
-                    grid: {
-                      ...form.grid,
-                      driversPerTeam: raw === "" ? 0 : Number(raw),
-                    },
-                  });
-                }}
-              />
-            </Field>
           </div>
         </Section>
 
         <Section title="Marca">
           <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2">
-            <Field label="Logo (URL)" className="md:col-span-2">
-              <TextInput
-                value={form.branding.logoUrl}
-                placeholder="https://…"
-                onChange={(event) =>
-                  patch({
-                    branding: { ...form.branding, logoUrl: event.target.value },
-                  })
-                }
-              />
-            </Field>
-            <ColorField
-              label="Color primario"
-              value={form.branding.primaryColor}
-              error={invalid("branding.primaryColor")}
-              onChange={(primaryColor) =>
-                patch({ branding: { ...form.branding, primaryColor } })
-              }
-            />
-            <ColorField
-              label="Color secundario"
-              value={form.branding.secondaryColor}
-              error={invalid("branding.secondaryColor")}
-              onChange={(secondaryColor) =>
-                patch({ branding: { ...form.branding, secondaryColor } })
+            <LogoUrlOrFileField
+              label="Logo"
+              value={form.branding.logoUrl}
+              folder="logos/formula-1/competitions"
+              onChange={(logoUrl) =>
+                patch({ branding: { ...form.branding, logoUrl } })
               }
             />
           </div>
@@ -502,13 +405,6 @@ export function CompetitionForm({
                 placeholder="https://"
                 className={cn(invalid("website") && "border-[#f04438]")}
                 onChange={(event) => patch({ website: event.target.value })}
-              />
-            </Field>
-            <Field label="Descripción">
-              <TextArea
-                value={form.description}
-                rows={4}
-                onChange={(event) => patch({ description: event.target.value })}
               />
             </Field>
             <ToggleRow

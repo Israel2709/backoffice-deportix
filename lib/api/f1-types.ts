@@ -10,6 +10,13 @@ export type F1SessionType =
   | "sprint"
   | "race";
 
+/** Calendar session types persisted on `f1_races.type` (api-sports style). */
+export type F1RaceType =
+  | "Sprint Shootout"
+  | "Sprint"
+  | "Qualifying"
+  | "Race";
+
 export type F1SessionBoStatus =
   | "scheduled"
   | "live"
@@ -102,18 +109,24 @@ export interface F1Session {
 
 export interface F1DriverRanking {
   id: string;
+  competition_id: string | null;
   driver_id: string;
   season: number;
   points: number;
   position: number;
+  wins: number;
+  podiums: number;
 }
 
 export interface F1TeamRanking {
   id: string;
+  competition_id: string | null;
   team_id: string;
   season: number;
   points: number;
   position: number;
+  wins: number;
+  podiums: number;
 }
 
 export interface F1RaceResult {
@@ -146,6 +159,20 @@ export const F1_SESSION_TYPE_LABEL: Record<F1SessionType, string> = {
   sprint_qualifying: "SQ Sprint",
   sprint: "Sprint",
   race: "Carrera",
+};
+
+export const F1_RACE_TYPES: F1RaceType[] = [
+  "Sprint Shootout",
+  "Sprint",
+  "Qualifying",
+  "Race",
+];
+
+export const F1_RACE_TYPE_LABEL: Record<F1RaceType, string> = {
+  "Sprint Shootout": "Sprint Shootout",
+  Sprint: "Sprint Race",
+  Qualifying: "Qualifying",
+  Race: "Race",
 };
 
 export const F1_SESSION_STATUS_LABEL: Record<F1SessionBoStatus, string> = {

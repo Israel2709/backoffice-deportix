@@ -10,18 +10,17 @@ import {
   listAdminDrivers,
   listAdminF1Teams,
   listF1Participants,
+  updateF1Participant,
 } from "@/lib/api/admin-f1";
 import { driverDisplayName, type F1SeasonParticipant } from "@/lib/api/f1-types";
-import { EditableDataTable } from "@/components/data/editable-data-table";
+import {
+  EditableDataTable,
+  type EditableColumn,
+} from "@/components/data/editable-data-table";
 import { FilteredSelect } from "@/components/capture/filtered-select";
 import { Button } from "@/components/ui/button";
+import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { Note } from "@/components/ui/note";
-
-const columns = [
-  { id: "driver", header: "Piloto" },
-  // Avoid id "constructor" — collides with Object.prototype.constructor in filters.
-  { id: "constructor_name", header: "Constructor" },
-];
 
 export function SeasonParticipantsPanel({
   seasonId,
@@ -32,6 +31,11 @@ export function SeasonParticipantsPanel({
   const [pickDriverId, setPickDriverId] = useState("");
   const [pickConstructorId, setPickConstructorId] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [pendingDelete, setPendingDelete] = useState<{
+    ids: string[];
+    label: string;
+  } | null>(null);
 
   const participantsQuery = useQuery({
     queryKey: ["admin", "f1", "participants", seasonId],
@@ -69,11 +73,8 @@ export function SeasonParticipantsPanel({
         .map((d) => ({
           value: d.id,
           label: driverDisplayName(d),
-          meta: d.team_id
-            ? (constructorsById.get(d.team_id)?.name ?? undefined)
-            : undefined,
         })),
-    [driversQuery.data, usedDriverIds, constructorsById],
+    [driversQuery.data, usedDriverIds],
   );
 
   const constructorOptions = useMemo(
@@ -83,6 +84,57 @@ export function SeasonParticipantsPanel({
         label: t.name,
       })),
     [constructorsQuery.data],
+  );
+
+  const columns = useMemo<EditableColumn<F1SeasonParticipant>[]>(
+    () => [
+      {
+        id: "driver",
+        header: "Piloto",
+        editAs: "select",
+        placeholder: "Piloto…",
+        format: (driverId) => {
+          const driver = driversById.get(driverId);
+          return driver ? driverDisplayName(driver) : driverId;
+        },
+        options: (row, draft) => {
+          const currentDriverId = draft.driver || row.driver_id;
+          return (driversQuery.data?.data ?? [])
+            .filter(
+              (d) => d.id === currentDriverId || !usedDriverIds.has(d.id),
+            )
+            .map((d) => ({
+              value: d.id,
+              label: driverDisplayName(d),
+            }));
+        },
+        onCellChange: (_rowId, columnId, value, current) => {
+          if (columnId !== "driver") return;
+          const driver = driversById.get(value);
+          return {
+            ...current,
+            driver: value,
+            constructor_name:
+              driver?.team_id ?? current.constructor_name ?? "",
+          };
+        },
+      },
+      {
+        id: "constructor_name",
+        header: "Constructor",
+        editAs: "select",
+        placeholder: "Constructor…",
+        format: (teamId) => constructorsById.get(teamId)?.name ?? teamId,
+        options: constructorOptions,
+      },
+    ],
+    [
+      driversById,
+      constructorsById,
+      driversQuery.data,
+      usedDriverIds,
+      constructorOptions,
+    ],
   );
 
   const invalidate = () =>
@@ -106,26 +158,55 @@ export function SeasonParticipantsPanel({
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => deleteF1Participant(seasonId, id),
-    onMutate: (id) => setDeletingId(id),
-    onSuccess: () => {
-      toast.success("Participante eliminado");
+    mutationFn: async (ids: string[]) => {
+      for (const id of ids) {
+        setDeletingId(id);
+        await deleteF1Participant(seasonId, id);
+      }
+    },
+    onSuccess: (_data, ids) => {
+      toast.success(
+        ids.length === 1
+          ? "Participante eliminado de la competición"
+          : `${ids.length} participantes eliminados de la competición`,
+      );
+      setPendingDelete(null);
+      setSelectedIds((prev) => prev.filter((id) => !ids.includes(id)));
       invalidate();
     },
     onError: (error: Error) => toast.error(error.message),
     onSettled: () => setDeletingId(null),
   });
 
-  const getValues = useCallback(
-    (row: F1SeasonParticipant) => {
-      const driver = driversById.get(row.driver_id);
-      const constructor = constructorsById.get(row.team_id);
-      return {
-        driver: driver ? driverDisplayName(driver) : row.driver_id,
-        constructor_name: constructor?.name ?? row.team_id,
-      };
+  const saveMutation = useMutation({
+    mutationFn: async (
+      changes: Array<{ id: string; values: Record<string, string> }>,
+    ) => {
+      for (const change of changes) {
+        const driverId = change.values.driver?.trim();
+        const teamId = change.values.constructor_name?.trim();
+        if (!driverId || !teamId) {
+          throw new Error("Cada fila necesita piloto y constructor.");
+        }
+        await updateF1Participant(seasonId, change.id, {
+          driver_id: driverId,
+          team_id: teamId,
+        });
+      }
     },
-    [driversById, constructorsById],
+    onSuccess: () => {
+      toast.success("Participantes actualizados");
+      invalidate();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const getValues = useCallback(
+    (row: F1SeasonParticipant) => ({
+      driver: row.driver_id,
+      constructor_name: row.team_id,
+    }),
+    [],
   );
 
   function onPickDriver(driverId: string) {
@@ -168,7 +249,7 @@ export function SeasonParticipantsPanel({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="min-w-[200px]">
+          <div className="min-w-[280px] w-[280px]">
             <FilteredSelect
               value={pickDriverId}
               options={driverOptions}
@@ -178,7 +259,7 @@ export function SeasonParticipantsPanel({
               emptyLabel="Sin pilotos disponibles"
             />
           </div>
-          <div className="min-w-[200px]">
+          <div className="min-w-[280px] w-[280px]">
             <FilteredSelect
               value={pickConstructorId}
               options={constructorOptions}
@@ -199,35 +280,101 @@ export function SeasonParticipantsPanel({
         </div>
       </div>
 
+      {selectedIds.length > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#f1dfa9] bg-[#fff9e8] px-4 py-3">
+          <p className="text-[13px] text-[#7d5a00]">
+            {selectedIds.length} seleccionado
+            {selectedIds.length === 1 ? "" : "s"}
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              disabled={deleteMutation.isPending}
+              onClick={() => setSelectedIds([])}
+            >
+              Limpiar selección
+            </Button>
+            <Button
+              disabled={deleteMutation.isPending}
+              className="bg-dx-red text-white hover:bg-[#c81e1e]"
+              onClick={() => {
+                setPendingDelete({
+                  ids: selectedIds,
+                  label:
+                    selectedIds.length === 1
+                      ? (() => {
+                          const row = rows.find(
+                            (item) => item.id === selectedIds[0],
+                          );
+                          const driver = row
+                            ? driversById.get(row.driver_id)
+                            : null;
+                          return driver
+                            ? driverDisplayName(driver)
+                            : "este participante";
+                        })()
+                      : `${selectedIds.length} participantes`,
+                });
+              }}
+            >
+              Eliminar seleccionados
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
       <EditableDataTable
         columns={columns}
         rows={rows}
         getValues={getValues}
         showOpenAction={false}
+        selectable
+        selectedIds={selectedIds}
+        onSelectionChange={setSelectedIds}
+        saving={saveMutation.isPending}
         deletingId={deletingId}
         emptyLabel="No hay participantes registrados en esta competición."
+        onSave={(changes) => saveMutation.mutateAsync(changes)}
         onDelete={(id) => {
           const row = rows.find((item) => item.id === id);
           const driver = row ? driversById.get(row.driver_id) : null;
           const label = driver
             ? driverDisplayName(driver)
             : "este participante";
-          if (
-            !window.confirm(
-              `¿Quitar a «${label}» de esta competición?`,
-            )
-          ) {
-            return;
-          }
-          deleteMutation.mutate(id);
+          setPendingDelete({ ids: [id], label });
+        }}
+      />
+
+      <ConfirmModal
+        open={Boolean(pendingDelete)}
+        title={
+          pendingDelete && pendingDelete.ids.length > 1
+            ? "Quitar participantes"
+            : "Quitar participante"
+        }
+        description={
+          pendingDelete
+            ? pendingDelete.ids.length === 1
+              ? `¿Eliminar a «${pendingDelete.label}» de esta competición? Se borrará de la base de datos y no se puede deshacer.`
+              : `¿Eliminar ${pendingDelete.label} de esta competición? Se borrarán de la base de datos y no se puede deshacer.`
+            : undefined
+        }
+        confirmLabel="Eliminar"
+        confirmingLabel="Eliminando…"
+        confirming={deleteMutation.isPending}
+        onCancel={() => {
+          if (!deleteMutation.isPending) setPendingDelete(null);
+        }}
+        onConfirm={() => {
+          if (pendingDelete) deleteMutation.mutate(pendingDelete.ids);
         }}
       />
 
       <Note>
-        Al elegir un piloto se precarga su constructor de datos maestros; puedes
-        cambiarlo si corre con otro. Para cambiar el constructor de alguien ya
-        inscrito, quítalo y vuelve a agregarlo. Si falta un piloto o constructor,
-        créalo en Datos Maestros · Fórmula 1.
+        Clic en piloto o constructor para editar. Si cambias el piloto, el
+        constructor se actualiza al de datos maestros (puedes ajustarlo). Guarda
+        con el botón al pie de la tabla. Si falta un piloto o constructor, créalo
+        en Datos Maestros · Fórmula 1.
       </Note>
     </div>
   );

@@ -96,6 +96,11 @@ async function forward(
       );
     }
 
+    // 204/205 must not include a body (empty string still counts as one).
+    if (upstream.status === 204 || upstream.status === 205) {
+      return new NextResponse(null, { status: upstream.status });
+    }
+
     return new NextResponse(body, {
       status: upstream.status,
       headers: {

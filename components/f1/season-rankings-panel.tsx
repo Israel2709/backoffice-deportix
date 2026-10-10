@@ -1,8 +1,8 @@
 "use client";
-import { LoadingBlock } from "@/components/ui/spinner";
 
+import { LoadingBlock } from "@/components/ui/spinner";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   listAdminDrivers,
@@ -14,25 +14,74 @@ import {
   replaceTeamRankings,
 } from "@/lib/api/admin-f1";
 import { driverDisplayName } from "@/lib/api/f1-types";
-import { useDirtyGuard } from "@/hooks/use-dirty-guard";
+import {
+  EditableDataTable,
+  type EditableColumn,
+} from "@/components/data/editable-data-table";
 import { Button } from "@/components/ui/button";
 import { Note } from "@/components/ui/note";
-import { StickyActions } from "@/components/capture/sticky-actions";
-import { cn } from "@/lib/utils";
 
-type DriverRow = { driver_id: string; position: number; points: number };
-type TeamRow = { team_id: string; position: number; points: number };
+type DriverRankingRow = {
+  id: string;
+  rankingId?: string;
+  driver_id: string;
+  position: number;
+  points: number;
+  wins: number;
+  podiums: number;
+};
 
-const inputClass =
-  "mx-auto max-w-[74px] rounded-[7px] border border-[#d9e0ea] bg-white px-2 py-1.5 text-center text-[13px]";
+type TeamRankingRow = {
+  id: string;
+  rankingId?: string;
+  team_id: string;
+  position: number;
+  points: number;
+  wins: number;
+  podiums: number;
+};
+
+function draftDriverId(driverId: string) {
+  return `new:driver:${driverId}`;
+}
+
+function draftTeamId(teamId: string) {
+  return `new:team:${teamId}`;
+}
+
+function isDraftId(id: string) {
+  return id.startsWith("new:");
+}
+
+function numFrom(value: string | undefined, fallback = 0): number {
+  if (value == null || value.trim() === "") return fallback;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+/** Higher points first; ties broken by wins, then podiums. */
+function withCalculatedPositions<
+  T extends { id: string; points: number; wins: number; podiums: number },
+>(rows: T[]): Array<T & { position: number }> {
+  const ranked = [...rows].sort((a, b) => {
+    if (b.points !== a.points) return b.points - a.points;
+    if (b.wins !== a.wins) return b.wins - a.wins;
+    return b.podiums - a.podiums;
+  });
+  const positionById = new Map(
+    ranked.map((row, index) => [row.id, index + 1]),
+  );
+  return rows
+    .map((row) => ({
+      ...row,
+      position: positionById.get(row.id) ?? 0,
+    }))
+    .sort((a, b) => a.position - b.position);
+}
 
 export function SeasonRankingsPanel({ seasonId }: { seasonId: string }) {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<"drivers" | "teams">("drivers");
-  const [driverRows, setDriverRows] = useState<DriverRow[]>([]);
-  const [teamRows, setTeamRows] = useState<TeamRow[]>([]);
-  const [driverBaseline, setDriverBaseline] = useState("[]");
-  const [teamBaseline, setTeamBaseline] = useState("[]");
 
   const driverRankingsQuery = useQuery({
     queryKey: ["admin", "f1", "driver-rankings", seasonId],
@@ -64,102 +113,268 @@ export function SeasonRankingsPanel({ seasonId }: { seasonId: string }) {
     [teamsQuery.data],
   );
 
-  useEffect(() => {
+  const driverRows = useMemo<DriverRankingRow[]>(() => {
     const participants = participantsQuery.data?.data ?? [];
-    if (participants.length === 0) {
-      setDriverRows([]);
-      setDriverBaseline("[]");
-      return;
-    }
-    const participantIds = new Set(participants.map((p) => p.driver_id));
-    const rankings = (driverRankingsQuery.data?.data ?? []).filter((r) =>
-      participantIds.has(r.driver_id),
-    );
-    if (rankings.length > 0) {
-      const next = rankings.map((r) => ({
-        driver_id: r.driver_id,
-        position: r.position,
-        points: r.points,
-      }));
-      setDriverRows(next);
-      setDriverBaseline(JSON.stringify(next));
-      return;
-    }
-    const next = participants.map((p, index) => ({
-      driver_id: p.driver_id,
-      position: index + 1,
-      points: 0,
-    }));
-    setDriverRows(next);
-    setDriverBaseline(JSON.stringify(next));
-  }, [driverRankingsQuery.data, participantsQuery.data]);
+    const rankings = driverRankingsQuery.data?.data ?? [];
+    const byDriver = new Map(rankings.map((r) => [r.driver_id, r]));
 
-  useEffect(() => {
+    const rows = participants.map((p) => {
+      const ranking = byDriver.get(p.driver_id);
+      if (ranking) {
+        return {
+          id: ranking.id,
+          rankingId: ranking.id,
+          driver_id: p.driver_id,
+          position: ranking.position,
+          points: ranking.points,
+          wins: ranking.wins,
+          podiums: ranking.podiums,
+        };
+      }
+      return {
+        id: draftDriverId(p.driver_id),
+        driver_id: p.driver_id,
+        position: 0,
+        points: 0,
+        wins: 0,
+        podiums: 0,
+      };
+    });
+
+    return withCalculatedPositions(rows);
+  }, [participantsQuery.data, driverRankingsQuery.data]);
+
+  const teamRows = useMemo<TeamRankingRow[]>(() => {
     const participants = participantsQuery.data?.data ?? [];
+    const rankings = teamRankingsQuery.data?.data ?? [];
+    const byTeam = new Map(rankings.map((r) => [r.team_id, r]));
     const teamIds = [...new Set(participants.map((p) => p.team_id))];
-    if (teamIds.length === 0) {
-      setTeamRows([]);
-      setTeamBaseline("[]");
-      return;
-    }
-    const teamIdSet = new Set(teamIds);
-    const rankings = (teamRankingsQuery.data?.data ?? []).filter((r) =>
-      teamIdSet.has(r.team_id),
-    );
-    if (rankings.length > 0) {
-      const next = rankings.map((r) => ({
-        team_id: r.team_id,
-        position: r.position,
-        points: r.points,
-      }));
-      setTeamRows(next);
-      setTeamBaseline(JSON.stringify(next));
-      return;
-    }
-    const next = teamIds.map((teamId, index) => ({
-      team_id: teamId,
-      position: index + 1,
-      points: 0,
-    }));
-    setTeamRows(next);
-    setTeamBaseline(JSON.stringify(next));
-  }, [teamRankingsQuery.data, participantsQuery.data]);
 
-  const driverDirty = JSON.stringify(driverRows) !== driverBaseline;
-  const teamDirty = JSON.stringify(teamRows) !== teamBaseline;
-  const dirty = tab === "drivers" ? driverDirty : teamDirty;
-  useDirtyGuard(dirty);
+    const rows = teamIds.map((teamId) => {
+      const ranking = byTeam.get(teamId);
+      if (ranking) {
+        return {
+          id: ranking.id,
+          rankingId: ranking.id,
+          team_id: teamId,
+          position: ranking.position,
+          points: ranking.points,
+          wins: ranking.wins,
+          podiums: ranking.podiums,
+        };
+      }
+      return {
+        id: draftTeamId(teamId),
+        team_id: teamId,
+        position: 0,
+        points: 0,
+        wins: 0,
+        podiums: 0,
+      };
+    });
+
+    return withCalculatedPositions(rows);
+  }, [participantsQuery.data, teamRankingsQuery.data]);
+
+  const driverColumns = useMemo<EditableColumn<DriverRankingRow>[]>(
+    () => [
+      {
+        id: "position",
+        header: "Pos.",
+        filterable: false,
+        editable: false,
+        className: "w-[88px]",
+      },
+      {
+        id: "driver_id",
+        header: "Piloto",
+        filterable: false,
+        editable: false,
+        format: (driverId) => {
+          const driver = driversById.get(driverId);
+          return driver ? driverDisplayName(driver) : driverId;
+        },
+      },
+      {
+        id: "points",
+        header: "Pts",
+        filterable: false,
+        className: "w-[88px]",
+        placeholder: "0",
+      },
+      {
+        id: "wins",
+        header: "Triunfos",
+        filterable: false,
+        className: "w-[100px]",
+        placeholder: "0",
+      },
+      {
+        id: "podiums",
+        header: "Podios",
+        filterable: false,
+        className: "w-[100px]",
+        placeholder: "0",
+      },
+    ],
+    [driversById],
+  );
+
+  const teamColumns = useMemo<EditableColumn<TeamRankingRow>[]>(
+    () => [
+      {
+        id: "position",
+        header: "Pos.",
+        filterable: false,
+        editable: false,
+        className: "w-[88px]",
+      },
+      {
+        id: "team_id",
+        header: "Equipo",
+        filterable: false,
+        editable: false,
+        format: (teamId) => teamsById.get(teamId)?.name ?? teamId,
+      },
+      {
+        id: "points",
+        header: "Pts",
+        filterable: false,
+        className: "w-[88px]",
+        placeholder: "0",
+      },
+      {
+        id: "wins",
+        header: "Triunfos",
+        filterable: false,
+        className: "w-[100px]",
+        placeholder: "0",
+      },
+      {
+        id: "podiums",
+        header: "Podios",
+        filterable: false,
+        className: "w-[100px]",
+        placeholder: "0",
+      },
+    ],
+    [teamsById],
+  );
+
+  const getDriverValues = useCallback(
+    (row: DriverRankingRow) => ({
+      position: String(row.position),
+      driver_id: row.driver_id,
+      points: String(row.points),
+      wins: String(row.wins),
+      podiums: String(row.podiums),
+    }),
+    [],
+  );
+
+  const getTeamValues = useCallback(
+    (row: TeamRankingRow) => ({
+      position: String(row.position),
+      team_id: row.team_id,
+      points: String(row.points),
+      wins: String(row.wins),
+      podiums: String(row.podiums),
+    }),
+    [],
+  );
+
+  const invalidateDrivers = () =>
+    void queryClient.invalidateQueries({
+      queryKey: ["admin", "f1", "driver-rankings", seasonId],
+    });
+  const invalidateTeams = () =>
+    void queryClient.invalidateQueries({
+      queryKey: ["admin", "f1", "team-rankings", seasonId],
+    });
 
   const saveDriversMutation = useMutation({
-    mutationFn: () => replaceDriverRankings(seasonId, driverRows),
+    mutationFn: async (
+      changes: Array<{ id: string; values: Record<string, string> }>,
+    ) => {
+      const changeMap = new Map(changes.map((c) => [c.id, c.values]));
+      const merged = driverRows.map((row) => {
+        const values = changeMap.get(row.id);
+        return {
+          ...row,
+          points: values
+            ? numFrom(values.points, row.points)
+            : row.points,
+          wins: values ? numFrom(values.wins, row.wins) : row.wins,
+          podiums: values
+            ? numFrom(values.podiums, row.podiums)
+            : row.podiums,
+        };
+      });
+      const positioned = withCalculatedPositions(merged);
+      await replaceDriverRankings(
+        seasonId,
+        positioned.map((row) => ({
+          id: isDraftId(row.id) ? undefined : row.id,
+          driver_id: row.driver_id,
+          position: row.position,
+          points: row.points,
+          wins: row.wins,
+          podiums: row.podiums,
+        })),
+      );
+    },
     onSuccess: () => {
       toast.success("Clasificación de pilotos guardada");
-      setDriverBaseline(JSON.stringify(driverRows));
-      void queryClient.invalidateQueries({
-        queryKey: ["admin", "f1", "driver-rankings", seasonId],
-      });
+      invalidateDrivers();
     },
     onError: (error: Error) => toast.error(error.message),
   });
 
   const saveTeamsMutation = useMutation({
-    mutationFn: () => replaceTeamRankings(seasonId, teamRows),
+    mutationFn: async (
+      changes: Array<{ id: string; values: Record<string, string> }>,
+    ) => {
+      const changeMap = new Map(changes.map((c) => [c.id, c.values]));
+      const merged = teamRows.map((row) => {
+        const values = changeMap.get(row.id);
+        return {
+          ...row,
+          points: values
+            ? numFrom(values.points, row.points)
+            : row.points,
+          wins: values ? numFrom(values.wins, row.wins) : row.wins,
+          podiums: values
+            ? numFrom(values.podiums, row.podiums)
+            : row.podiums,
+        };
+      });
+      const positioned = withCalculatedPositions(merged);
+      await replaceTeamRankings(
+        seasonId,
+        positioned.map((row) => ({
+          id: isDraftId(row.id) ? undefined : row.id,
+          team_id: row.team_id,
+          position: row.position,
+          points: row.points,
+          wins: row.wins,
+          podiums: row.podiums,
+        })),
+      );
+    },
     onSuccess: () => {
       toast.success("Clasificación de constructores guardada");
-      setTeamBaseline(JSON.stringify(teamRows));
-      void queryClient.invalidateQueries({
-        queryKey: ["admin", "f1", "team-rankings", seasonId],
-      });
+      invalidateTeams();
     },
     onError: (error: Error) => toast.error(error.message),
   });
 
-  const saving =
-    tab === "drivers"
-      ? saveDriversMutation.isPending
-      : saveTeamsMutation.isPending;
-
-  if (driverRankingsQuery.isLoading || teamRankingsQuery.isLoading) {
+  if (
+    driverRankingsQuery.isLoading ||
+    teamRankingsQuery.isLoading ||
+    participantsQuery.isLoading ||
+    driversQuery.isLoading ||
+    teamsQuery.isLoading
+  ) {
     return <LoadingBlock label="Cargando clasificaciones…" />;
   }
 
@@ -169,7 +384,7 @@ export function SeasonRankingsPanel({ seasonId }: { seasonId: string }) {
         <div>
           <h2 className="text-[21px] font-semibold">Clasificaciones</h2>
           <p className="text-sm text-dx-muted">
-            Campeonato de pilotos y constructores
+            Pilotos y constructores inscritos en esta competición
           </p>
         </div>
         <div className="flex gap-1.5 rounded-xl border border-dx-line bg-white p-1.5">
@@ -189,166 +404,32 @@ export function SeasonRankingsPanel({ seasonId }: { seasonId: string }) {
       </div>
 
       {tab === "drivers" ? (
-        <div className="overflow-x-auto rounded-[14px] border border-dx-line bg-white">
-          <table className="w-full min-w-[520px] border-separate border-spacing-0 text-left text-sm">
-            <thead>
-              <tr className="bg-[#f8fafc] text-[11px] tracking-wide text-[#667085] uppercase">
-                <th className="border-b border-dx-line px-3 py-2.5 text-center">
-                  Pos.
-                </th>
-                <th className="border-b border-dx-line px-3 py-2.5">Piloto</th>
-                <th className="border-b border-dx-line px-3 py-2.5 text-center">
-                  Pts
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {driverRows.map((row) => {
-                const driver = driversById.get(row.driver_id);
-                return (
-                  <tr key={row.driver_id}>
-                    <td className="border-b border-dx-line px-3 py-2 text-center">
-                      <input
-                        className={cn(inputClass, "max-w-[56px] font-extrabold")}
-                        value={row.position}
-                        onChange={(e) =>
-                          setDriverRows((prev) =>
-                            prev.map((r) =>
-                              r.driver_id === row.driver_id
-                                ? {
-                                    ...r,
-                                    position: Number(e.target.value) || 0,
-                                  }
-                                : r,
-                            ),
-                          )
-                        }
-                      />
-                    </td>
-                    <td className="border-b border-dx-line px-3 py-2">
-                      <strong>
-                        {driver
-                          ? driverDisplayName(driver)
-                          : row.driver_id}
-                      </strong>
-                    </td>
-                    <td className="border-b border-dx-line px-3 py-2 text-center">
-                      <input
-                        className={inputClass}
-                        value={row.points}
-                        onChange={(e) =>
-                          setDriverRows((prev) =>
-                            prev.map((r) =>
-                              r.driver_id === row.driver_id
-                                ? {
-                                    ...r,
-                                    points: Number(e.target.value) || 0,
-                                  }
-                                : r,
-                            ),
-                          )
-                        }
-                      />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <EditableDataTable
+          columns={driverColumns}
+          rows={driverRows}
+          getValues={getDriverValues}
+          showOpenAction={false}
+          saving={saveDriversMutation.isPending}
+          emptyLabel="No hay participantes inscritos. Agrega pilotos en la pestaña Participantes."
+          onSave={(changes) => saveDriversMutation.mutateAsync(changes)}
+        />
       ) : (
-        <div className="overflow-x-auto rounded-[14px] border border-dx-line bg-white">
-          <table className="w-full min-w-[520px] border-separate border-spacing-0 text-left text-sm">
-            <thead>
-              <tr className="bg-[#f8fafc] text-[11px] tracking-wide text-[#667085] uppercase">
-                <th className="border-b border-dx-line px-3 py-2.5 text-center">
-                  Pos.
-                </th>
-                <th className="border-b border-dx-line px-3 py-2.5">
-                  Constructor
-                </th>
-                <th className="border-b border-dx-line px-3 py-2.5 text-center">
-                  Pts
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {teamRows.map((row) => {
-                const team = teamsById.get(row.team_id);
-                return (
-                  <tr key={row.team_id}>
-                    <td className="border-b border-dx-line px-3 py-2 text-center">
-                      <input
-                        className={cn(inputClass, "max-w-[56px] font-extrabold")}
-                        value={row.position}
-                        onChange={(e) =>
-                          setTeamRows((prev) =>
-                            prev.map((r) =>
-                              r.team_id === row.team_id
-                                ? {
-                                    ...r,
-                                    position: Number(e.target.value) || 0,
-                                  }
-                                : r,
-                            ),
-                          )
-                        }
-                      />
-                    </td>
-                    <td className="border-b border-dx-line px-3 py-2">
-                      <strong>{team?.name ?? row.team_id}</strong>
-                    </td>
-                    <td className="border-b border-dx-line px-3 py-2 text-center">
-                      <input
-                        className={inputClass}
-                        value={row.points}
-                        onChange={(e) =>
-                          setTeamRows((prev) =>
-                            prev.map((r) =>
-                              r.team_id === row.team_id
-                                ? {
-                                    ...r,
-                                    points: Number(e.target.value) || 0,
-                                  }
-                                : r,
-                            ),
-                          )
-                        }
-                      />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <EditableDataTable
+          columns={teamColumns}
+          rows={teamRows}
+          getValues={getTeamValues}
+          showOpenAction={false}
+          saving={saveTeamsMutation.isPending}
+          emptyLabel="No hay constructores inscritos. Agrega participantes en la pestaña Participantes."
+          onSave={(changes) => saveTeamsMutation.mutateAsync(changes)}
+        />
       )}
 
       <Note>
-        Las tablas se inicializan desde participantes si aún no hay ranking
-        guardado.
+        La posición se calcula automáticamente por puntos (desempate: triunfos,
+        luego podios). Edita puntos, triunfos o podios y guarda para
+        recalcular el orden.
       </Note>
-
-      <StickyActions
-        dirty={dirty}
-        saving={saving}
-        saveLabel={
-          tab === "drivers"
-            ? "Guardar clasificación pilotos"
-            : "Guardar clasificación constructores"
-        }
-        onDiscard={() => {
-          if (tab === "drivers") {
-            setDriverRows(JSON.parse(driverBaseline) as DriverRow[]);
-          } else {
-            setTeamRows(JSON.parse(teamBaseline) as TeamRow[]);
-          }
-        }}
-        onSave={() => {
-          if (tab === "drivers") saveDriversMutation.mutate();
-          else saveTeamsMutation.mutate();
-        }}
-      />
     </div>
   );
 }

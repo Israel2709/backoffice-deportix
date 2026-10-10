@@ -64,15 +64,23 @@ type BffRace = {
   status: string;
 };
 type BffDriverRanking = {
+  id: string;
+  competitionId?: string | null;
   position: number;
   points?: number | null;
+  wins?: number | null;
+  podiums?: number | null;
   season: number;
   driver: { id: string; name: string };
   team?: { id: string; name: string } | null;
 };
 type BffTeamRanking = {
+  id: string;
+  competitionId?: string | null;
   position: number;
   points?: number | null;
+  wins?: number | null;
+  podiums?: number | null;
   season: number;
   team: { id: string; name: string };
 };
@@ -148,7 +156,7 @@ function mapRace(r: BffRace): F1Race {
     circuit_id: String(r.circuit?.id ?? ""),
     season: r.season,
     race_date: r.date,
-    name: r.type || r.competition?.name || null,
+    name: r.competition?.name ?? null,
     status: r.status,
     type: r.type ?? null,
   };
@@ -647,6 +655,7 @@ export async function updateF1Participant(
   seasonId: string,
   entryId: string,
   body: Partial<{
+    driver_id: string;
     team_id: string;
     number: number | null;
     role: "race-driver" | "reserve-driver";
@@ -654,6 +663,7 @@ export async function updateF1Participant(
   }>,
 ): One<F1SeasonParticipant> {
   const patch: Record<string, unknown> = {};
+  if (body.driver_id !== undefined) patch.driverId = body.driver_id;
   if (body.team_id !== undefined) patch.teamId = body.team_id;
   if (body.number !== undefined) patch.number = body.number;
   if (body.role !== undefined) patch.role = body.role;
@@ -754,7 +764,7 @@ export async function createRace(body: {
   season_id: string;
   circuit_id: string;
   race_date: string;
-  name?: string | null;
+  type: string;
   status?: string;
 }): One<F1Race> {
   const { year } = parseSeasonId(body.season_id);
@@ -764,7 +774,7 @@ export async function createRace(body: {
       competitionId: body.competition_id,
       circuitId: body.circuit_id,
       season: year,
-      type: body.name?.trim() || "Race",
+      type: body.type,
       date: body.race_date,
       status: body.status ?? "Scheduled",
     }),
@@ -779,14 +789,14 @@ export async function updateRace(
   body: Partial<{
     circuit_id: string;
     race_date: string | null;
-    name: string | null;
+    type: string;
     status: string;
   }>,
 ): One<F1Race> {
   const patch: Record<string, unknown> = {};
   if (body.circuit_id !== undefined) patch.circuitId = body.circuit_id;
   if (body.race_date !== undefined) patch.date = body.race_date;
-  if (body.name !== undefined) patch.type = body.name;
+  if (body.type !== undefined) patch.type = body.type;
   if (body.status !== undefined) patch.status = body.status;
 
   const response = await bffRequest<BffRace[] | BffRace>(
@@ -845,75 +855,131 @@ export async function deleteSession(_id: string): Promise<void> {
 
 // ─── Rankings ─────────────────────────────────────────────────────────────────
 
+export type DriverRankingWrite = {
+  id?: string;
+  driver_id: string;
+  position: number;
+  points: number;
+  wins: number;
+  podiums: number;
+};
+
+export type TeamRankingWrite = {
+  id?: string;
+  team_id: string;
+  position: number;
+  points: number;
+  wins: number;
+  podiums: number;
+};
+
 export async function listDriverRankings(
   seasonId: string,
 ): List<F1DriverRanking> {
-  const { year } = parseSeasonId(seasonId);
+  const { competitionId, year } = parseSeasonId(seasonId);
   const response = await bffRequest<BffDriverRanking[]>(
-    `${PREFIX}/rankings/drivers?season=${year}`,
+    `${PREFIX}/rankings/drivers?season=${year}&competition=${encodeURIComponent(competitionId)}`,
   );
   return {
     data: asList(response).map((r) => ({
-      id: `${year}:${r.driver.id}`,
+      id: String(r.id),
+      competition_id: r.competitionId ?? null,
       driver_id: String(r.driver.id),
       season: r.season,
       points: r.points ?? 0,
       position: r.position,
+      wins: r.wins ?? 0,
+      podiums: r.podiums ?? 0,
     })),
   };
 }
 
 export async function replaceDriverRankings(
   seasonId: string,
-  rankings: Array<{ driver_id: string; position: number; points: number }>,
+  rankings: DriverRankingWrite[],
 ): List<F1DriverRanking> {
-  const { year } = parseSeasonId(seasonId);
+  const { competitionId, year } = parseSeasonId(seasonId);
+
   for (const row of rankings) {
-    await bffRequest(`${PREFIX}/rankings/drivers`, {
-      method: "POST",
-      body: JSON.stringify({
-        driverId: row.driver_id,
-        season: year,
-        position: row.position,
-        points: row.points,
-      }),
-    });
+    const body = {
+      competitionId,
+      driverId: row.driver_id,
+      season: year,
+      position: row.position,
+      points: row.points,
+      wins: row.wins,
+      podiums: row.podiums,
+    };
+    if (row.id) {
+      await bffRequest(
+        `${PREFIX}/rankings/drivers?id=${encodeURIComponent(row.id)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        },
+      );
+    } else {
+      await bffRequest(`${PREFIX}/rankings/drivers`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    }
   }
+
   return listDriverRankings(seasonId);
 }
 
 export async function listTeamRankings(seasonId: string): List<F1TeamRanking> {
-  const { year } = parseSeasonId(seasonId);
+  const { competitionId, year } = parseSeasonId(seasonId);
   const response = await bffRequest<BffTeamRanking[]>(
-    `${PREFIX}/rankings/teams?season=${year}`,
+    `${PREFIX}/rankings/teams?season=${year}&competition=${encodeURIComponent(competitionId)}`,
   );
   return {
     data: asList(response).map((r) => ({
-      id: `${year}:${r.team.id}`,
+      id: String(r.id),
+      competition_id: r.competitionId ?? null,
       team_id: String(r.team.id),
       season: r.season,
       points: r.points ?? 0,
       position: r.position,
+      wins: r.wins ?? 0,
+      podiums: r.podiums ?? 0,
     })),
   };
 }
 
 export async function replaceTeamRankings(
   seasonId: string,
-  rankings: Array<{ team_id: string; position: number; points: number }>,
+  rankings: TeamRankingWrite[],
 ): List<F1TeamRanking> {
-  const { year } = parseSeasonId(seasonId);
+  const { competitionId, year } = parseSeasonId(seasonId);
+
   for (const row of rankings) {
-    await bffRequest(`${PREFIX}/rankings/teams`, {
-      method: "POST",
-      body: JSON.stringify({
-        teamId: row.team_id,
-        season: year,
-        position: row.position,
-        points: row.points,
-      }),
-    });
+    const body = {
+      competitionId,
+      teamId: row.team_id,
+      season: year,
+      position: row.position,
+      points: row.points,
+      wins: row.wins,
+      podiums: row.podiums,
+    };
+    if (row.id) {
+      await bffRequest(
+        `${PREFIX}/rankings/teams?id=${encodeURIComponent(row.id)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        },
+      );
+    } else {
+      await bffRequest(`${PREFIX}/rankings/teams`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    }
   }
+
   return listTeamRankings(seasonId);
 }
 

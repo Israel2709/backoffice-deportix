@@ -10,13 +10,16 @@ import type {
   F1Competition,
   F1Driver,
   F1DriverRanking,
+  F1FastestLapEntry,
   F1Race,
+  F1RaceHighlights,
   F1RaceResult,
   F1Season,
   F1SeasonParticipant,
   F1Session,
   F1SessionBoStatus,
   F1SessionType,
+  F1StartingGridEntry,
   F1Team,
   F1TeamRanking,
   F1ResultStatus,
@@ -86,6 +89,21 @@ type BffTeamRanking = {
 };
 type BffRaceRanking = {
   position: number;
+  driver: { id: string; name: string };
+  team?: { id: string; name: string } | null;
+};
+type BffStartingGrid = {
+  race?: { id: string };
+  position: number;
+  time?: string | null;
+  driver: { id: string; name: string };
+  team?: { id: string; name: string } | null;
+};
+type BffFastestLap = {
+  race?: { id: string };
+  position: number;
+  lap: number;
+  time?: string | null;
   driver: { id: string; name: string };
   team?: { id: string; name: string } | null;
 };
@@ -992,7 +1010,9 @@ export async function listRaceResults(raceId: string): List<F1RaceResult> {
       id: `${raceId}:${r.driver.id}`,
       race_id: raceId,
       driver_id: String(r.driver.id),
+      driver_name: r.driver.name ?? null,
       team_id: r.team?.id != null ? String(r.team.id) : "",
+      team_name: r.team?.name ?? null,
       position: r.position,
       points: null,
       status: "classified" as F1ResultStatus,
@@ -1021,4 +1041,176 @@ export async function replaceRaceResults(
     });
   }
   return listRaceResults(raceId);
+}
+
+export async function listStartingGrid(
+  raceId: string,
+): List<F1StartingGridEntry> {
+  const response = await bffRequest<BffStartingGrid[]>(
+    `${PREFIX}/rankings/startinggrid?race=${encodeURIComponent(raceId)}`,
+  );
+  return {
+    data: asList(response).map((r) => ({
+      id: `${raceId}:grid:${r.driver.id}`,
+      race_id: raceId,
+      driver_id: String(r.driver.id),
+      driver_name: r.driver.name ?? null,
+      team_id: r.team?.id != null ? String(r.team.id) : "",
+      team_name: r.team?.name ?? null,
+      position: r.position,
+      time: r.time ?? null,
+    })),
+  };
+}
+
+export async function setRacePole(
+  raceId: string,
+  driverId: string,
+): Promise<void> {
+  await bffRequest(`${PREFIX}/rankings/startinggrid`, {
+    method: "POST",
+    body: JSON.stringify({
+      raceId,
+      driverId,
+      position: 1,
+    }),
+  });
+}
+
+export async function listFastestLaps(
+  raceId: string,
+): List<F1FastestLapEntry> {
+  const response = await bffRequest<BffFastestLap[]>(
+    `${PREFIX}/rankings/fastestlaps?race=${encodeURIComponent(raceId)}`,
+  );
+  return {
+    data: asList(response).map((r) => ({
+      id: `${raceId}:fl:${r.driver.id}`,
+      race_id: raceId,
+      driver_id: String(r.driver.id),
+      driver_name: r.driver.name ?? null,
+      team_id: r.team?.id != null ? String(r.team.id) : "",
+      team_name: r.team?.name ?? null,
+      position: r.position,
+      lap: r.lap,
+      time: r.time ?? null,
+    })),
+  };
+}
+
+export async function setFastestLap(
+  raceId: string,
+  driverId: string,
+): Promise<void> {
+  await bffRequest(`${PREFIX}/rankings/fastestlaps`, {
+    method: "POST",
+    body: JSON.stringify({
+      raceId,
+      driverId,
+      position: 1,
+      lap: 1,
+    }),
+  });
+}
+
+function driverLabel(entry?: {
+  driver_name?: string | null;
+  driver_id?: string;
+} | null): string {
+  if (!entry) return "—";
+  return entry.driver_name?.trim() || entry.driver_id || "—";
+}
+
+export async function getRaceHighlights(
+  raceId: string,
+): Promise<F1RaceHighlights> {
+  const [results, grid, fastest] = await Promise.all([
+    listRaceResults(raceId),
+    listStartingGrid(raceId),
+    listFastestLaps(raceId),
+  ]);
+
+  const byPos = new Map(results.data.map((r) => [r.position, r]));
+  const p1 = byPos.get(1);
+  const p2 = byPos.get(2);
+  const p3 = byPos.get(3);
+  const pole = grid.data.find((g) => g.position === 1) ?? null;
+  const fl =
+    fastest.data.find((f) => f.position === 1) ?? fastest.data[0] ?? null;
+
+  const winningTeam = p1?.team_name?.trim() || "—";
+  const poleName = driverLabel(pole);
+  const winnerName = driverLabel(p1);
+
+  return {
+    race_id: raceId,
+    p1: winnerName,
+    p2: driverLabel(p2),
+    p3: driverLabel(p3),
+    fastest_lap: driverLabel(fl),
+    race_pole: poleName,
+    winning_team: winningTeam,
+    sprint_pole: poleName,
+    sprint_winner: winnerName,
+    sprint_winning_team: winningTeam,
+    p1_driver_id: p1?.driver_id ?? "",
+    p2_driver_id: p2?.driver_id ?? "",
+    p3_driver_id: p3?.driver_id ?? "",
+    pole_driver_id: pole?.driver_id ?? "",
+    fastest_driver_id: fl?.driver_id ?? "",
+    winning_team_id: p1?.team_id ?? "",
+  };
+}
+
+/** Persist podium (P1–P3), pole and fastest lap for a race session. */
+export async function saveRaceHighlights(
+  raceId: string,
+  input: {
+    p1_driver_id: string;
+    p2_driver_id?: string;
+    p3_driver_id?: string;
+    pole_driver_id?: string;
+    fastest_driver_id?: string;
+    winning_team_id?: string;
+  },
+): Promise<F1RaceHighlights> {
+  const podium: Array<{
+    driver_id: string;
+    team_id: string;
+    position: number;
+  }> = [];
+
+  if (input.p1_driver_id) {
+    podium.push({
+      driver_id: input.p1_driver_id,
+      team_id: input.winning_team_id ?? "",
+      position: 1,
+    });
+  }
+  if (input.p2_driver_id) {
+    podium.push({
+      driver_id: input.p2_driver_id,
+      team_id: "",
+      position: 2,
+    });
+  }
+  if (input.p3_driver_id) {
+    podium.push({
+      driver_id: input.p3_driver_id,
+      team_id: "",
+      position: 3,
+    });
+  }
+
+  if (podium.length > 0) {
+    await replaceRaceResults(raceId, podium);
+  }
+  if (input.pole_driver_id) {
+    await setRacePole(raceId, input.pole_driver_id);
+  }
+  if (input.fastest_driver_id) {
+    await setFastestLap(raceId, input.fastest_driver_id);
+  }
+
+  return getRaceHighlights(raceId);
 }

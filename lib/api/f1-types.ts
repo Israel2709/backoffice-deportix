@@ -133,10 +133,55 @@ export interface F1RaceResult {
   id: string;
   race_id: string;
   driver_id: string;
+  driver_name?: string | null;
   team_id: string;
+  team_name?: string | null;
   position: number;
   points?: number | null;
   status?: F1ResultStatus | null;
+}
+
+export interface F1StartingGridEntry {
+  id: string;
+  race_id: string;
+  driver_id: string;
+  driver_name?: string | null;
+  team_id: string;
+  team_name?: string | null;
+  position: number;
+  time?: string | null;
+}
+
+export interface F1FastestLapEntry {
+  id: string;
+  race_id: string;
+  driver_id: string;
+  driver_name?: string | null;
+  team_id: string;
+  team_name?: string | null;
+  position: number;
+  lap: number;
+  time?: string | null;
+}
+
+/** Aggregated podium / highlights for the results list table. */
+export interface F1RaceHighlights {
+  race_id: string;
+  p1: string;
+  p2: string;
+  p3: string;
+  fastest_lap: string;
+  race_pole: string;
+  winning_team: string;
+  sprint_pole: string;
+  sprint_winner: string;
+  sprint_winning_team: string;
+  p1_driver_id: string;
+  p2_driver_id: string;
+  p3_driver_id: string;
+  pole_driver_id: string;
+  fastest_driver_id: string;
+  winning_team_id: string;
 }
 
 export function seasonLabel(season: F1Season): string {

@@ -1,58 +1,67 @@
 "use client";
-import { LoadingBlock } from "@/components/ui/spinner";
 
+import { LoadingBlock } from "@/components/ui/spinner";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   getRace,
+  getRaceHighlights,
   listAdminDrivers,
   listAdminF1Teams,
   listF1Participants,
-  listRaceResults,
-  replaceRaceResults,
+  saveRaceHighlights,
 } from "@/lib/api/admin-f1";
-import {
-  driverDisplayName,
-  F1_RESULT_STATUS_LABEL,
-  type F1ResultStatus,
-} from "@/lib/api/f1-types";
+import { driverDisplayName } from "@/lib/api/f1-types";
 import { useDirtyGuard } from "@/hooks/use-dirty-guard";
+import { FilteredSelect } from "@/components/capture/filtered-select";
+import { Field } from "@/components/capture/field";
 import { Button } from "@/components/ui/button";
 import { Note } from "@/components/ui/note";
-import { StickyActions } from "@/components/capture/sticky-actions";
-import { TextSelect } from "@/components/capture/field";
-import { cn } from "@/lib/utils";
 
-type ResultRow = {
-  driver_id: string;
-  team_id: string;
-  position: number;
-  points: number;
-  status: F1ResultStatus;
+type HighlightsForm = {
+  p1_driver_id: string;
+  p2_driver_id: string;
+  p3_driver_id: string;
+  pole_driver_id: string;
+  fastest_driver_id: string;
+  winning_team_id: string;
 };
 
-const inputClass =
-  "mx-auto max-w-[74px] rounded-[7px] border border-[#d9e0ea] bg-white px-2 py-1.5 text-center text-[13px]";
+const EMPTY_FORM: HighlightsForm = {
+  p1_driver_id: "",
+  p2_driver_id: "",
+  p3_driver_id: "",
+  pole_driver_id: "",
+  fastest_driver_id: "",
+  winning_team_id: "",
+};
 
 export function RaceResultsPanel({
   raceId,
   seasonId,
+  embedded = false,
+  onSaved,
+  onCancel,
 }: {
   raceId: string;
   seasonId: string;
+  /** Compact layout for use inside a modal. */
+  embedded?: boolean;
+  onSaved?: () => void;
+  onCancel?: () => void;
 }) {
   const queryClient = useQueryClient();
-  const [rows, setRows] = useState<ResultRow[]>([]);
-  const [baseline, setBaseline] = useState("[]");
+  const [form, setForm] = useState<HighlightsForm>(EMPTY_FORM);
+  const [baseline, setBaseline] = useState(JSON.stringify(EMPTY_FORM));
 
   const raceQuery = useQuery({
     queryKey: ["admin", "f1", "race", raceId],
     queryFn: () => getRace(raceId),
   });
-  const resultsQuery = useQuery({
-    queryKey: ["admin", "f1", "race-results", raceId],
-    queryFn: () => listRaceResults(raceId),
+  const highlightsQuery = useQuery({
+    queryKey: ["admin", "f1", "race-highlights", raceId],
+    queryFn: () => getRaceHighlights(raceId),
   });
   const participantsQuery = useQuery({
     queryKey: ["admin", "f1", "participants", seasonId],
@@ -71,224 +80,262 @@ export function RaceResultsPanel({
     () => new Map((driversQuery.data?.data ?? []).map((d) => [d.id, d])),
     [driversQuery.data],
   );
-  const teamsById = useMemo(
-    () => new Map((teamsQuery.data?.data ?? []).map((t) => [t.id, t])),
-    [teamsQuery.data],
+  const participants = participantsQuery.data?.data ?? [];
+
+  const teamIdByDriver = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of participants) map.set(p.driver_id, p.team_id);
+    return map;
+  }, [participants]);
+
+  const driverOptions = useMemo(
+    () =>
+      participants.map((p) => {
+        const driver = driversById.get(p.driver_id);
+        return {
+          value: p.driver_id,
+          label: driver ? driverDisplayName(driver) : p.driver_id,
+        };
+      }),
+    [participants, driversById],
   );
-  const participantPairs = useMemo(
-    () => participantsQuery.data?.data ?? [],
-    [participantsQuery.data],
-  );
+
+  const teamOptions = useMemo(() => {
+    const ids = [...new Set(participants.map((p) => p.team_id))];
+    return ids.map((id) => ({
+      value: id,
+      label: teamsQuery.data?.data.find((t) => t.id === id)?.name ?? id,
+    }));
+  }, [participants, teamsQuery.data]);
+
+  const isSprint = raceQuery.data?.data.type === "Sprint";
 
   useEffect(() => {
-    const results = resultsQuery.data?.data ?? [];
-    if (results.length > 0) {
-      const next = results.map((r) => ({
-        driver_id: r.driver_id,
-        team_id: r.team_id,
-        position: r.position,
-        points: r.points ?? 0,
-        status: (r.status ?? "classified") as F1ResultStatus,
-      }));
-      setRows(next);
-      setBaseline(JSON.stringify(next));
-      return;
-    }
-    if (participantPairs.length === 0) return;
-    const next = participantPairs.map((p, index) => ({
-      driver_id: p.driver_id,
-      team_id: p.team_id,
-      position: index + 1,
-      points: 0,
-      status: "classified" as F1ResultStatus,
-    }));
-    setRows(next);
+    const h = highlightsQuery.data;
+    if (!h) return;
+    const next: HighlightsForm = {
+      p1_driver_id: h.p1_driver_id,
+      p2_driver_id: h.p2_driver_id,
+      p3_driver_id: h.p3_driver_id,
+      pole_driver_id: h.pole_driver_id,
+      fastest_driver_id: h.fastest_driver_id,
+      winning_team_id:
+        h.winning_team_id ||
+        (h.p1_driver_id ? teamIdByDriver.get(h.p1_driver_id) ?? "" : ""),
+    };
+    setForm(next);
     setBaseline(JSON.stringify(next));
-  }, [resultsQuery.data, participantPairs]);
+  }, [highlightsQuery.data, teamIdByDriver]);
 
-  const dirty = JSON.stringify(rows) !== baseline;
-  useDirtyGuard(dirty);
+  const dirty = JSON.stringify(form) !== baseline;
+  useDirtyGuard(dirty && !embedded);
 
   const saveMutation = useMutation({
-    mutationFn: () =>
-      replaceRaceResults(
-        raceId,
-        rows.map((r) => ({
-          driver_id: r.driver_id,
-          team_id: r.team_id,
-          position: r.position,
-          points: r.points,
-          status: r.status,
-        })),
-      ),
+    mutationFn: () => {
+      if (!form.p1_driver_id) {
+        throw new Error("Selecciona al menos el piloto de P1.");
+      }
+      return saveRaceHighlights(raceId, {
+        p1_driver_id: form.p1_driver_id,
+        p2_driver_id: form.p2_driver_id || undefined,
+        p3_driver_id: form.p3_driver_id || undefined,
+        pole_driver_id: form.pole_driver_id || undefined,
+        fastest_driver_id: form.fastest_driver_id || undefined,
+        winning_team_id: form.winning_team_id || undefined,
+      });
+    },
     onSuccess: () => {
       toast.success("Resultados guardados");
-      setBaseline(JSON.stringify(rows));
+      setBaseline(JSON.stringify(form));
+      void queryClient.invalidateQueries({
+        queryKey: ["admin", "f1", "race-highlights", raceId],
+      });
       void queryClient.invalidateQueries({
         queryKey: ["admin", "f1", "race-results", raceId],
       });
+      void queryClient.invalidateQueries({
+        queryKey: ["admin", "f1", "starting-grid", raceId],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["admin", "f1", "fastest-laps", raceId],
+      });
+      onSaved?.();
     },
     onError: (error: Error) => toast.error(error.message),
   });
 
-  if (raceQuery.isLoading || resultsQuery.isLoading) {
+  function patchForm(patch: Partial<HighlightsForm>) {
+    setForm((prev) => {
+      const next = { ...prev, ...patch };
+      if (
+        patch.p1_driver_id !== undefined &&
+        patch.p1_driver_id !== prev.p1_driver_id
+      ) {
+        next.winning_team_id = teamIdByDriver.get(patch.p1_driver_id) ?? "";
+      }
+      return next;
+    });
+  }
+
+  if (
+    raceQuery.isLoading ||
+    highlightsQuery.isLoading ||
+    participantsQuery.isLoading ||
+    driversQuery.isLoading ||
+    teamsQuery.isLoading
+  ) {
     return <LoadingBlock label="Cargando resultados…" />;
   }
 
   const race = raceQuery.data?.data;
 
-  function updateRow(driverId: string, patch: Partial<ResultRow>) {
-    setRows((prev) =>
-      prev.map((row) =>
-        row.driver_id === driverId ? { ...row, ...patch } : row,
-      ),
-    );
-  }
-
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-[21px] font-semibold">
-          {race?.name?.trim() || "Resultados de carrera"}
-        </h2>
+      {!embedded ? (
+        <div>
+          <h2 className="text-[21px] font-semibold">
+            {race?.name?.trim() || "Resultados de carrera"}
+          </h2>
+          <p className="text-sm text-dx-muted">
+            {race?.race_date
+              ? new Date(race.race_date).toLocaleDateString()
+              : "Sin fecha"}
+          </p>
+        </div>
+      ) : (
         <p className="text-sm text-dx-muted">
-          {race?.race_date
-            ? new Date(race.race_date).toLocaleDateString()
-            : "Sin fecha"}{" "}
-          · {rows.length} filas
+          Completa los mismos datos que se muestran en la tabla de resultados.
         </p>
+      )}
+
+      <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2">
+        <Field label="P1">
+          <FilteredSelect
+            value={form.p1_driver_id}
+            options={driverOptions}
+            onChange={(value) => patchForm({ p1_driver_id: value })}
+            placeholder="Piloto…"
+            searchPlaceholder="Buscar piloto…"
+            emptyLabel="Sin participantes"
+          />
+        </Field>
+        <Field label="P2">
+          <FilteredSelect
+            value={form.p2_driver_id}
+            options={driverOptions}
+            onChange={(value) => patchForm({ p2_driver_id: value })}
+            placeholder="Piloto…"
+            searchPlaceholder="Buscar piloto…"
+            emptyLabel="Sin participantes"
+          />
+        </Field>
+        <Field label="P3">
+          <FilteredSelect
+            value={form.p3_driver_id}
+            options={driverOptions}
+            onChange={(value) => patchForm({ p3_driver_id: value })}
+            placeholder="Piloto…"
+            searchPlaceholder="Buscar piloto…"
+            emptyLabel="Sin participantes"
+          />
+        </Field>
+        <Field label="Fastest lap">
+          <FilteredSelect
+            value={form.fastest_driver_id}
+            options={driverOptions}
+            onChange={(value) => patchForm({ fastest_driver_id: value })}
+            placeholder="Piloto…"
+            searchPlaceholder="Buscar piloto…"
+            emptyLabel="Sin participantes"
+          />
+        </Field>
+        <Field label="Race pole position">
+          <FilteredSelect
+            value={form.pole_driver_id}
+            options={driverOptions}
+            onChange={(value) => patchForm({ pole_driver_id: value })}
+            placeholder="Piloto…"
+            searchPlaceholder="Buscar piloto…"
+            emptyLabel="Sin participantes"
+          />
+        </Field>
+        <Field label="Winning team">
+          <FilteredSelect
+            value={form.winning_team_id}
+            options={teamOptions}
+            onChange={(value) => patchForm({ winning_team_id: value })}
+            placeholder="Equipo…"
+            searchPlaceholder="Buscar equipo…"
+            emptyLabel="Sin constructores"
+          />
+        </Field>
+        {isSprint ? (
+          <>
+            <Field label="Sprint pole position">
+              <FilteredSelect
+                value={form.pole_driver_id}
+                options={driverOptions}
+                onChange={(value) => patchForm({ pole_driver_id: value })}
+                placeholder="Piloto…"
+                searchPlaceholder="Buscar piloto…"
+                emptyLabel="Sin participantes"
+              />
+            </Field>
+            <Field label="Sprint winner">
+              <FilteredSelect
+                value={form.p1_driver_id}
+                options={driverOptions}
+                onChange={(value) => patchForm({ p1_driver_id: value })}
+                placeholder="Piloto…"
+                searchPlaceholder="Buscar piloto…"
+                emptyLabel="Sin participantes"
+              />
+            </Field>
+            <Field label="Sprint winning team">
+              <FilteredSelect
+                value={form.winning_team_id}
+                options={teamOptions}
+                onChange={(value) => patchForm({ winning_team_id: value })}
+                placeholder="Equipo…"
+                searchPlaceholder="Buscar equipo…"
+                emptyLabel="Sin constructores"
+              />
+            </Field>
+          </>
+        ) : null}
       </div>
 
-      <div className="overflow-x-auto rounded-[14px] border border-dx-line bg-white">
-        <table className="w-full min-w-[900px] border-separate border-spacing-0 text-left text-sm">
-          <thead>
-            <tr className="bg-[#f8fafc] text-[11px] tracking-wide text-[#667085] uppercase">
-              <th className="border-b border-dx-line px-3 py-2.5 text-center">
-                Pos.
-              </th>
-              <th className="border-b border-dx-line px-3 py-2.5">Piloto</th>
-              <th className="border-b border-dx-line px-3 py-2.5">
-                Constructor
-              </th>
-              <th className="border-b border-dx-line px-3 py-2.5 text-center">
-                Pts
-              </th>
-              <th className="border-b border-dx-line px-3 py-2.5">Estado</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => {
-              const driver = driversById.get(row.driver_id);
-              const team = teamsById.get(row.team_id);
-              return (
-                <tr key={row.driver_id}>
-                  <td className="border-b border-dx-line px-3 py-2 text-center">
-                    <input
-                      className={cn(inputClass, "max-w-[56px] font-extrabold")}
-                      value={row.position}
-                      onChange={(e) =>
-                        updateRow(row.driver_id, {
-                          position: Number(e.target.value) || 0,
-                        })
-                      }
-                    />
-                  </td>
-                  <td className="border-b border-dx-line px-3 py-2">
-                    <strong>
-                      {driver ? driverDisplayName(driver) : row.driver_id}
-                    </strong>
-                  </td>
-                  <td className="border-b border-dx-line px-3 py-2">
-                    <TextSelect
-                      value={row.team_id}
-                      onChange={(e) =>
-                        updateRow(row.driver_id, { team_id: e.target.value })
-                      }
-                    >
-                      {(teamsQuery.data?.data ?? []).map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                        </option>
-                      ))}
-                    </TextSelect>
-                    {!team ? (
-                      <span className="text-xs text-dx-muted">{row.team_id}</span>
-                    ) : null}
-                  </td>
-                  <td className="border-b border-dx-line px-3 py-2 text-center">
-                    <input
-                      className={inputClass}
-                      value={row.points}
-                      onChange={(e) =>
-                        updateRow(row.driver_id, {
-                          points: Number(e.target.value) || 0,
-                        })
-                      }
-                    />
-                  </td>
-                  <td className="border-b border-dx-line px-3 py-2">
-                    <TextSelect
-                      value={row.status}
-                      onChange={(e) =>
-                        updateRow(row.driver_id, {
-                          status: e.target.value as F1ResultStatus,
-                        })
-                      }
-                    >
-                      {(
-                        Object.keys(F1_RESULT_STATUS_LABEL) as F1ResultStatus[]
-                      ).map((key) => (
-                        <option key={key} value={key}>
-                          {F1_RESULT_STATUS_LABEL[key]}
-                        </option>
-                      ))}
-                    </TextSelect>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="flex gap-2">
+      <div className="flex flex-wrap justify-end gap-2">
+        {embedded && onCancel ? (
+          <Button
+            variant="secondary"
+            disabled={saveMutation.isPending}
+            onClick={onCancel}
+          >
+            Cancelar
+          </Button>
+        ) : null}
         <Button
           variant="secondary"
-          onClick={() => {
-            const used = new Set(rows.map((r) => r.driver_id));
-            const next = participantPairs.find((p) => !used.has(p.driver_id));
-            if (!next) {
-              toast.message("No hay más participantes por agregar");
-              return;
-            }
-            setRows((prev) => [
-              ...prev,
-              {
-                driver_id: next.driver_id,
-                team_id: next.team_id,
-                position: prev.length + 1,
-                points: 0,
-                status: "classified",
-              },
-            ]);
-          }}
+          disabled={!dirty || saveMutation.isPending}
+          onClick={() => setForm(JSON.parse(baseline) as HighlightsForm)}
         >
-          + Agregar fila
+          Descartar
+        </Button>
+        <Button
+          disabled={!dirty || saveMutation.isPending}
+          onClick={() => saveMutation.mutate()}
+        >
+          {saveMutation.isPending ? "Guardando…" : "Guardar resultados"}
         </Button>
       </div>
 
-      <Note>
-        El lote reemplaza todos los resultados de la carrera. Los pilotos deben
-        ser participantes de la temporada.
-      </Note>
-
-      <StickyActions
-        dirty={dirty}
-        saving={saveMutation.isPending}
-        saveLabel="Guardar resultados"
-        onDiscard={() => setRows(JSON.parse(baseline) as ResultRow[])}
-        onSave={() => saveMutation.mutate()}
-      />
+      {!embedded ? (
+        <Note>
+          Todos los campos son pilotos, excepto Winning team / Sprint winning
+          team (constructores). Al elegir P1 se sugiere su equipo.
+        </Note>
+      ) : null}
     </div>
   );
 }

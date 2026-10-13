@@ -17,6 +17,8 @@ export type EditableColumn<T> = {
   sortable?: boolean;
   filterable?: boolean;
   editable?: boolean;
+  /** Per-row override; when false, the cell stays read-only. */
+  isCellEditable?: (row: T) => boolean;
   placeholder?: string;
   className?: string;
   /** Optional display formatter (edit still uses raw string value). */
@@ -53,6 +55,8 @@ type EditableDataTableProps<T extends { id: string }> = {
     changes: Array<{ id: string; values: Record<string, string> }>,
   ) => void | Promise<void>;
   onDelete?: (id: string) => void | Promise<void>;
+  /** Edit action in Acciones (e.g. open a modal). */
+  onEdit?: (id: string) => void | Promise<void>;
   /** When set, rows navigate on click (browse lists). */
   rowHref?: (row: T) => string;
   /** Optional edit link shown in Acciones. */
@@ -97,6 +101,7 @@ export function EditableDataTable<T extends { id: string }>({
   getValues,
   onSave,
   onDelete,
+  onEdit,
   rowHref,
   editHref,
   showOpenAction,
@@ -246,7 +251,7 @@ export function EditableDataTable<T extends { id: string }>({
     await onSave(changes);
   }
 
-  const showActions = Boolean(onDelete || openAction || editHref);
+  const showActions = Boolean(onDelete || onEdit || openAction || editHref);
   const colSpan =
     columns.length + (showActions ? 1 : 0) + (selectable ? 1 : 0);
 
@@ -410,7 +415,9 @@ export function EditableDataTable<T extends { id: string }>({
                       const raw = values[col.id] ?? "";
                       const isFocused = focused === key;
                       const editable =
-                        editableMode && col.editable !== false;
+                        editableMode &&
+                        col.editable !== false &&
+                        (col.isCellEditable?.(row) ?? true);
                       const display = raw
                         ? (col.format?.(raw, row) ?? raw)
                         : (col.placeholder ?? "—");
@@ -518,6 +525,17 @@ export function EditableDataTable<T extends { id: string }>({
                             >
                               <Pencil className="h-4 w-4" />
                             </Link>
+                          ) : null}
+                          {onEdit && !editLink ? (
+                            <button
+                              type="button"
+                              title="Editar"
+                              disabled={saving}
+                              onClick={() => void onEdit(row.id)}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#8090a8] hover:bg-[#f5f8ff] hover:text-dx-blue disabled:opacity-50"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
                           ) : null}
                           {href && openAction ? (
                             <Link

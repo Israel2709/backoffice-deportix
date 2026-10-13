@@ -137,7 +137,8 @@ export function FilteredSelect({
               top: menuPosition.top,
               left: menuPosition.left,
               width: menuPosition.width,
-              zIndex: 80,
+              // Above modals (z-90) so menus inside dialogs remain clickable.
+              zIndex: 100,
             }}
             className="overflow-hidden rounded-[10px] border border-[#d7dee9] bg-white shadow-[0_10px_30px_rgba(19,53,105,0.18)]"
           >

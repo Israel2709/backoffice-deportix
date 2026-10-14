@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -10,8 +10,10 @@ import { LoadingBlock } from "@/components/ui/spinner";
 import {
   deleteCompetition,
   listAdminCompetitions,
+  listAdminRacesBySeason,
 } from "@/lib/api/admin-f1";
 import { unlinkCompetitionFromCountry } from "@/lib/f1-competition-countries";
+import { sortCompetitionsBySchedule } from "@/lib/f1-competition-schedule";
 import { seasonIdFor, type F1Competition } from "@/lib/api/f1-types";
 
 const columns = [
@@ -39,7 +41,18 @@ export function CompetitionsListPanel({ year }: { year: number }) {
     queryFn: () => listAdminCompetitions({ season: year }),
   });
 
-  const rows = competitionsQuery.data?.data ?? [];
+  const racesQuery = useQuery({
+    queryKey: ["admin", "f1", "races", { season: year }],
+    queryFn: () => listAdminRacesBySeason(year),
+  });
+
+  const rows = useMemo(() => {
+    const competitions = competitionsQuery.data?.data ?? [];
+    const races = racesQuery.data?.data ?? [];
+    if (races.length === 0) return competitions;
+    return sortCompetitionsBySchedule(competitions, races);
+  }, [competitionsQuery.data?.data, racesQuery.data?.data]);
+
   const nuevaHref = `/operacion/formula-1/temporada/${year}/nueva`;
 
   const deleteMutation = useMutation({
@@ -67,7 +80,7 @@ export function CompetitionsListPanel({ year }: { year: number }) {
     [year],
   );
 
-  if (competitionsQuery.isLoading) {
+  if (competitionsQuery.isLoading || racesQuery.isLoading) {
     return <LoadingBlock compact label="Cargando…" />;
   }
 

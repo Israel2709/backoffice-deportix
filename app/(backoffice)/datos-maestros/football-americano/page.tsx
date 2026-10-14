@@ -1,5 +1,4 @@
 import { EntityList } from "@/components/data/entity-list";
-import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { ClickCard } from "@/components/ui/click-card";
 import { Hero } from "@/components/ui/hero";
 import { Note } from "@/components/ui/note";
@@ -9,14 +8,10 @@ export default function NflMaestrosPage() {
   return (
     <>
       <PageHeader
-        crumbs={
-          <Breadcrumbs
-            items={[
+        items={[
               { label: "Datos Maestros", href: "/datos-maestros" },
               { label: "Football Americano" },
             ]}
-          />
-        }
       >
         <Hero
           eyebrow="Datos Maestros · Football Americano"

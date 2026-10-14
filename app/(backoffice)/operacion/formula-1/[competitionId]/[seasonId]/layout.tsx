@@ -1,17 +1,22 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { use } from "react";
+import { use, useMemo } from "react";
 import { getAdminCompetition, getAdminF1Season } from "@/lib/api/admin-f1";
 import {
   SEASON_STATUS_LABEL,
   parseSeasonId,
   seasonLabel,
 } from "@/lib/api/f1-types";
+import {
+  F1_COMPETITION_RECENT_MAX,
+  f1CompetitionRecentKey,
+} from "@/components/f1/recent-keys";
 import { F1SeasonTabs } from "@/components/capture/f1-season-tabs";
-import { Breadcrumbs } from "@/components/ui/breadcrumbs";
+import { Hero } from "@/components/ui/hero";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { PageHeader } from "@/components/ui/page";
+import { useRecordRecentVisit } from "@/hooks/use-recent-visits";
 
 export default function F1SeasonLayout({
   children,
@@ -32,45 +37,48 @@ export default function F1SeasonLayout({
 
   const competitionName = competitionQuery.data?.data.name ?? "Competición";
   const season = seasonQuery.data?.data;
-  let routeSeason = "Temporada";
+  let yearLabel = "Temporada";
   try {
-    routeSeason = String(parseSeasonId(seasonId).year);
+    yearLabel = String(parseSeasonId(seasonId).year);
   } catch {
-    routeSeason = "Temporada";
+    yearLabel = "Temporada";
   }
-  const seasonText = season ? seasonLabel(season) : routeSeason;
+  const seasonText = season ? seasonLabel(season) : yearLabel;
+  const competitionsHref = `/operacion/formula-1/temporada/${encodeURIComponent(yearLabel)}`;
+
+  const recentCompetition = useMemo(() => {
+    if (!competitionQuery.data?.data?.name) return null;
+    if (!Number.isFinite(Number(yearLabel))) return null;
+    return {
+      id: competitionId,
+      label: competitionQuery.data.data.name,
+      href: `/operacion/formula-1/${competitionId}/${encodeURIComponent(seasonId)}`,
+    };
+  }, [competitionId, competitionQuery.data?.data?.name, seasonId, yearLabel]);
+
+  useRecordRecentVisit(
+    f1CompetitionRecentKey(yearLabel),
+    recentCompetition,
+    F1_COMPETITION_RECENT_MAX,
+  );
 
   return (
     <>
       <PageHeader
-        crumbs={
-          <Breadcrumbs
-            items={[
-              { label: "Operación Deportiva", href: "/operacion" },
-              { label: "Fórmula 1", href: "/operacion/formula-1" },
-              {
-                label: competitionName,
-                href: `/operacion/formula-1/${competitionId}`,
-              },
-              { label: seasonText },
-            ]}
-          />
-        }
+        items={[
+          { label: "Operación Deportiva", href: "/operacion" },
+          { label: "Fórmula 1", href: "/operacion/formula-1" },
+          { label: yearLabel, href: competitionsHref },
+          { label: competitionName },
+        ]}
+        backLabel="Competiciones"
       >
-        <section className="mb-5 rounded-[18px] border border-dx-line bg-dx-card px-7 py-[26px]">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <div className="text-xs font-extrabold tracking-[0.06em] text-dx-blue uppercase">
-                Fórmula 1
-              </div>
-              <h1 className="mt-2 mb-2 text-[30px] font-semibold text-dx-ink">
-                {competitionName} - {seasonText}
-              </h1>
-              <p className="text-[15px] text-dx-muted">
-                Captura consolidada de la temporada F1.
-              </p>
-            </div>
-            {season ? (
+        <Hero
+          eyebrow="Fórmula 1"
+          title={`${competitionName} - ${seasonText}`}
+          description="Captura consolidada de la temporada F1."
+          actions={
+            season ? (
               <StatusBadge
                 tone={
                   season.status === "current"
@@ -82,9 +90,9 @@ export default function F1SeasonLayout({
               >
                 {SEASON_STATUS_LABEL[season.status ?? "upcoming"]}
               </StatusBadge>
-            ) : null}
-          </div>
-        </section>
+            ) : null
+          }
+        />
       </PageHeader>
 
       <F1SeasonTabs competitionId={competitionId} seasonId={seasonId} />

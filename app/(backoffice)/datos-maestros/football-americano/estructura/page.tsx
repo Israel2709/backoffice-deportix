@@ -1,4 +1,3 @@
-import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { Hero } from "@/components/ui/hero";
 import { PageHeader } from "@/components/ui/page";
 import { StructureMasterPanel } from "@/components/nfl/structure-master-panel";
@@ -7,9 +6,7 @@ export default function NflEstructuraPage() {
   return (
     <>
       <PageHeader
-        crumbs={
-          <Breadcrumbs
-            items={[
+        items={[
               { label: "Datos Maestros", href: "/datos-maestros" },
               {
                 label: "Football Americano",
@@ -17,8 +14,6 @@ export default function NflEstructuraPage() {
               },
               { label: "Estructura" },
             ]}
-          />
-        }
       >
         <Hero
           eyebrow="NFL · Estructura"

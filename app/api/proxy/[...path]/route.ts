@@ -17,11 +17,25 @@ const ALLOWED_PREFIXES = [
   "api/",
 ] as const;
 
+/** Deployed MVP API — default for Vercel and when env is unset. */
+const PRODUCTION_API_BASE_URL = "https://deportix-api.vercel.app";
+
+function resolveApiBaseUrl(): string {
+  const configured = process.env.DEPORTIX_API_BASE_URL?.replace(/\/$/, "").trim();
+  if (!configured) return PRODUCTION_API_BASE_URL;
+
+  // Vercel must never call localhost (common misconfig from copying .env.local).
+  const onVercel = Boolean(process.env.VERCEL);
+  const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(
+    configured,
+  );
+  if (onVercel && isLocalhost) return PRODUCTION_API_BASE_URL;
+
+  return configured;
+}
+
 function getConfig() {
-  const baseUrl = process.env.DEPORTIX_API_BASE_URL?.replace(/\/$/, "");
-  if (!baseUrl) {
-    throw new Error("DEPORTIX_API_BASE_URL is not configured");
-  }
+  const baseUrl = resolveApiBaseUrl();
   // Optional — only used when forwarding legacy /admin/* to Express API
   const apiKey = process.env.ADMIN_API_KEY;
   return { baseUrl, apiKey };

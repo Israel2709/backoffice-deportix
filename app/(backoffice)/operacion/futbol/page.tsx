@@ -4,7 +4,6 @@ import { useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { EditableDataTable } from "@/components/data/editable-data-table";
-import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { Hero } from "@/components/ui/hero";
 import { Note } from "@/components/ui/note";
 import { PageHeader } from "@/components/ui/page";
@@ -37,14 +36,10 @@ export default function OperacionFutbolPage() {
   return (
     <>
       <PageHeader
-        crumbs={
-          <Breadcrumbs
-            items={[
+        items={[
               { label: "Operación Deportiva", href: "/operacion" },
               { label: "Fútbol" },
             ]}
-          />
-        }
       >
         <Hero
           eyebrow="Operación · Fútbol"

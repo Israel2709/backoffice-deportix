@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { Hero } from "@/components/ui/hero";
 import { Note } from "@/components/ui/note";
 import { PageHeader } from "@/components/ui/page";
@@ -8,15 +7,12 @@ export default function NuevaCompeticionF1Page() {
   return (
     <>
       <PageHeader
-        crumbs={
-          <Breadcrumbs
-            items={[
-              { label: "Operación Deportiva", href: "/operacion" },
-              { label: "Fórmula 1", href: "/operacion/formula-1" },
-              { label: "Nueva competición" },
-            ]}
-          />
-        }
+        items={[
+          { label: "Operación Deportiva", href: "/operacion" },
+          { label: "Fórmula 1", href: "/operacion/formula-1" },
+          { label: "Nueva competición" },
+        ]}
+        backLabel="Temporadas"
       >
         <Hero
           eyebrow="Operación · Fórmula 1"

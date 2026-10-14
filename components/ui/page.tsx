@@ -1,18 +1,56 @@
 import Link from "next/link";
+import { Breadcrumbs, type Crumb } from "@/components/ui/breadcrumbs";
 import { cn } from "@/lib/utils";
 
+function parentCrumb(items: Crumb[]): Crumb | undefined {
+  return [...items]
+    .slice(0, -1)
+    .reverse()
+    .find((crumb) => Boolean(crumb.href));
+}
+
 export function PageHeader({
+  items,
   crumbs,
+  backLabel,
+  actions,
   children,
 }: {
-  crumbs: React.ReactNode;
+  /** Preferred: structured crumbs — also drives the default back CTA. */
+  items?: Crumb[];
+  /** Legacy slot when `items` is not passed. */
+  crumbs?: React.ReactNode;
+  /** Override the auto back CTA label (href still comes from parent crumb). */
+  backLabel?: string;
+  /** Full override of the top-right actions (replaces auto back). */
+  actions?: React.ReactNode;
   children: React.ReactNode;
 }) {
+  const parent = items ? parentCrumb(items) : undefined;
+  const autoBack =
+    parent?.href != null ? (
+      <Link
+        href={parent.href}
+        className="inline-flex items-center gap-1.5 rounded-[10px] border border-[#cbd8ee] bg-white px-3 py-1.5 text-[13px] font-bold text-dx-blue hover:bg-[#f5f8ff]"
+      >
+        ← {backLabel ?? parent.label}
+      </Link>
+    ) : null;
+
   return (
     <>
-      <div className="mb-[22px] flex items-center justify-between gap-5">
-        <div>{crumbs}</div>
-        <div className="text-[13px] text-[#69758a]">Administrador</div>
+      <div
+        className={cn(
+          // Pull into main padding; bar itself uses py-3 top/bottom.
+          "sticky top-0 z-20 -mx-5 -mt-5 mb-[22px] flex items-center justify-between gap-5",
+          "border-b border-dx-line bg-dx-bg px-5 py-3",
+          "md:-mx-9 md:-mt-[30px] md:px-9",
+        )}
+      >
+        <div className="min-w-0">
+          {items ? <Breadcrumbs items={items} /> : crumbs}
+        </div>
+        <div className="shrink-0">{actions ?? autoBack}</div>
       </div>
       {children}
     </>

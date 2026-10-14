@@ -4,7 +4,6 @@ import { use } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useCountryOrganizations } from "@/components/futbol/equipos-scope-panels";
 import { TeamsMasterPanel } from "@/components/futbol/teams-master-panel";
-import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { Hero } from "@/components/ui/hero";
 import { PageHeader } from "@/components/ui/page";
 import { getAdminLeague } from "@/lib/api/admin-soccer";
@@ -30,9 +29,7 @@ export default function FutbolEquiposLeaguePage({
   return (
     <>
       <PageHeader
-        crumbs={
-          <Breadcrumbs
-            items={[
+        items={[
               { label: "Datos Maestros", href: "/datos-maestros" },
               { label: "Fútbol", href: "/datos-maestros/futbol" },
               { label: "Equipos", href: equiposHref() },
@@ -46,8 +43,6 @@ export default function FutbolEquiposLeaguePage({
               },
               { label: leagueName },
             ]}
-          />
-        }
       >
         <Hero
           eyebrow="Datos Maestros · Fútbol"

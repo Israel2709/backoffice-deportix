@@ -15,7 +15,7 @@ Referencia funcional/visual: `docs/deportix-backoffice.docx` y `docs/htmls/` (V3
 ## Requisitos
 
 1. Node.js 20+
-2. `deportix-api` corriendo en `http://localhost:3001` (`npm run dev:api` en ese repo)
+2. Para desarrollo local contra API local: `deportix-api` en `http://localhost:3001` (`npm run dev:api`)
 
 ## Configuración
 
@@ -26,15 +26,19 @@ cp .env.example .env.local
 Variables:
 
 ```
+# Local — apunta al API en tu máquina
 DEPORTIX_API_BASE_URL=http://localhost:3001
 ADMIN_API_KEY=dev-local-key
 ```
+
+Si no defines `DEPORTIX_API_BASE_URL`, el proxy usa `https://deportix-api.vercel.app`.
+En **Vercel**, ese es el destino por defecto; un valor `localhost` en variables de entorno se ignora.
 
 La API key **nunca** se expone al browser: el BFF en `/api/proxy/*` la inyecta solo para rutas `/admin/*`.
 
 ## Desarrollo
 
-En dos terminales:
+En dos terminales (API local):
 
 ```bash
 # deportix-api
@@ -43,6 +47,8 @@ npm run dev:api
 # deportix-backoffice
 npm run dev
 ```
+
+O deja `.env.local` sin override / usa la URL de Vercel para trabajar contra la API desplegada.
 
 Abre [http://localhost:3000](http://localhost:3000).
 

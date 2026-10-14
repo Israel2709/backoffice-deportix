@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/react-query";
 import { use } from "react";
 import { getRace } from "@/lib/api/admin-f1";
 import { RaceResultsPanel } from "@/components/f1/race-results-panel";
-import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { PageHeader } from "@/components/ui/page";
 
 export default function F1RaceResultsPage({
@@ -26,19 +25,16 @@ export default function F1RaceResultsPage({
   return (
     <>
       <PageHeader
-        crumbs={
-          <Breadcrumbs
-            items={[
-              { label: "Operación Deportiva", href: "/operacion" },
-              { label: "Fórmula 1", href: "/operacion/formula-1" },
-              {
-                label: "Temporada",
-                href: `/operacion/formula-1/${competitionId}/${seasonId}/calendario`,
-              },
-              { label: raceName },
-            ]}
-          />
-        }
+        items={[
+          { label: "Operación Deportiva", href: "/operacion" },
+          { label: "Fórmula 1", href: "/operacion/formula-1" },
+          {
+            label: "Calendario",
+            href: `/operacion/formula-1/${competitionId}/${seasonId}/calendario`,
+          },
+          { label: raceName },
+        ]}
+        backLabel="Calendario"
       >
         <div />
       </PageHeader>

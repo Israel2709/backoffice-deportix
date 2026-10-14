@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/react-query";
 import { use } from "react";
 import { getAdminLeague } from "@/lib/api/admin-nfl";
 import { SeasonsListPanel } from "@/components/nfl/seasons-list-panel";
-import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { Hero } from "@/components/ui/hero";
 import { PageHeader } from "@/components/ui/page";
 
@@ -22,9 +21,7 @@ export default function OperacionNflLeaguePage({
   return (
     <>
       <PageHeader
-        crumbs={
-          <Breadcrumbs
-            items={[
+        items={[
               { label: "Operación Deportiva", href: "/operacion" },
               {
                 label: "Football Americano",
@@ -32,8 +29,6 @@ export default function OperacionNflLeaguePage({
               },
               { label: leagueQuery.data?.data.name ?? "Competición" },
             ]}
-          />
-        }
       >
         <Hero
           eyebrow="Operación · NFL"

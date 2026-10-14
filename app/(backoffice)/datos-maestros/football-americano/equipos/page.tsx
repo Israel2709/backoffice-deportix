@@ -1,4 +1,3 @@
-import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { Hero } from "@/components/ui/hero";
 import { PageHeader } from "@/components/ui/page";
 import { TeamsMasterPanel } from "@/components/nfl/teams-master-panel";
@@ -7,9 +6,7 @@ export default function NflEquiposPage() {
   return (
     <>
       <PageHeader
-        crumbs={
-          <Breadcrumbs
-            items={[
+        items={[
               { label: "Datos Maestros", href: "/datos-maestros" },
               {
                 label: "Football Americano",
@@ -17,8 +14,6 @@ export default function NflEquiposPage() {
               },
               { label: "Equipos" },
             ]}
-          />
-        }
       >
         <Hero
           eyebrow="Datos Maestros · NFL"

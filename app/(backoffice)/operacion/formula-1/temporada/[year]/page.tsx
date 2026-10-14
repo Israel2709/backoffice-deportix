@@ -3,11 +3,18 @@
 import { use, useMemo } from "react";
 import Link from "next/link";
 import { CompetitionsListPanel } from "@/components/f1/competitions-list-panel";
-import { F1_SEASON_RECENT_KEY } from "@/components/f1/recent-keys";
-import { Breadcrumbs } from "@/components/ui/breadcrumbs";
+import {
+  F1_COMPETITION_RECENT_MAX,
+  F1_SEASON_RECENT_KEY,
+  f1CompetitionRecentKey,
+} from "@/components/f1/recent-keys";
 import { PageHeader } from "@/components/ui/page";
 import { Hero } from "@/components/ui/hero";
-import { useRecordRecentVisit } from "@/hooks/use-recent-visits";
+import { RecentlyVisited } from "@/components/ui/recently-visited";
+import {
+  useRecentVisits,
+  useRecordRecentVisit,
+} from "@/hooks/use-recent-visits";
 
 export default function OperacionF1SeasonPage({
   params,
@@ -18,6 +25,7 @@ export default function OperacionF1SeasonPage({
   const year = Number(yearParam);
   const yearLabel = Number.isFinite(year) ? String(year) : yearParam;
   const seasonHref = `/operacion/formula-1/temporada/${yearLabel}`;
+  const competitionRecentKey = f1CompetitionRecentKey(yearLabel);
 
   const recentItem = useMemo(() => {
     if (!Number.isFinite(year)) return null;
@@ -30,43 +38,45 @@ export default function OperacionF1SeasonPage({
 
   useRecordRecentVisit(F1_SEASON_RECENT_KEY, recentItem);
 
+  const { items: recentCompetitions } = useRecentVisits(
+    competitionRecentKey,
+    F1_COMPETITION_RECENT_MAX,
+  );
+
   return (
     <>
       <PageHeader
-        crumbs={
-          <Breadcrumbs
-            items={[
-              { label: "Operación Deportiva", href: "/operacion" },
-              { label: "Fórmula 1", href: "/operacion/formula-1" },
-              { label: yearLabel },
-            ]}
-          />
-        }
+        items={[
+          { label: "Operación Deportiva", href: "/operacion" },
+          { label: "Fórmula 1", href: "/operacion/formula-1" },
+          { label: yearLabel },
+        ]}
+        backLabel="Temporadas"
       >
         <Hero
           eyebrow="Operación · Fórmula 1"
           title="Competiciones"
           description={`Grand Prix de la temporada ${yearLabel}. Selecciona uno para operar calendario, participantes y clasificaciones.`}
           actions={
-            <>
+            Number.isFinite(year) ? (
               <Link
-                href="/operacion/formula-1"
-                className="inline-flex items-center gap-2 rounded-[10px] border border-[#cbd8ee] bg-white px-[15px] py-[11px] text-sm font-bold text-dx-blue hover:bg-[#f5f8ff]"
+                href={`${seasonHref}/nueva`}
+                className="inline-flex items-center gap-2 rounded-[10px] bg-dx-blue px-[15px] py-[11px] text-sm font-bold !text-white hover:bg-dx-blue2"
               >
-                ← Temporadas
+                + Nueva competición
               </Link>
-              {Number.isFinite(year) ? (
-                <Link
-                  href={`${seasonHref}/nueva`}
-                  className="inline-flex items-center gap-2 rounded-[10px] bg-dx-blue px-[15px] py-[11px] text-sm font-bold !text-white hover:bg-dx-blue2"
-                >
-                  + Nueva competición
-                </Link>
-              ) : null}
-            </>
+            ) : null
           }
         />
       </PageHeader>
+      {recentCompetitions.length > 0 ? (
+        <div className="mb-4">
+          <RecentlyVisited
+            items={recentCompetitions}
+            className="flex"
+          />
+        </div>
+      ) : null}
       {Number.isFinite(year) ? (
         <CompetitionsListPanel year={year} />
       ) : (

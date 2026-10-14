@@ -6,7 +6,6 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Field, TextInput } from "@/components/capture/field";
 import { MasterSelectList } from "@/components/futbol/master-select-list";
-import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { Button } from "@/components/ui/button";
 import { Hero } from "@/components/ui/hero";
 import { Note } from "@/components/ui/note";
@@ -155,16 +154,12 @@ export function EquiposOrganizationScreen({ countryId }: { countryId: string }) 
   return (
     <>
       <PageHeader
-        crumbs={
-          <Breadcrumbs
-            items={[
+        items={[
               { label: "Datos Maestros", href: "/datos-maestros" },
               { label: "Fútbol", href: "/datos-maestros/futbol" },
               { label: "Equipos", href: equiposHref() },
               { label: countryName },
             ]}
-          />
-        }
       >
         <Hero
           eyebrow={`Fútbol · ${countryName}`}

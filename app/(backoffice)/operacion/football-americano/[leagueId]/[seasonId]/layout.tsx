@@ -8,7 +8,6 @@ import {
   seasonLabel,
 } from "@/lib/api/nfl-types";
 import { NflSeasonTabs } from "@/components/nfl/nfl-season-tabs";
-import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { PageHeader } from "@/components/ui/page";
 
@@ -35,9 +34,7 @@ export default function NflSeasonLayout({
   return (
     <>
       <PageHeader
-        crumbs={
-          <Breadcrumbs
-            items={[
+        items={[
               { label: "Operación Deportiva", href: "/operacion" },
               {
                 label: "Football Americano",
@@ -49,8 +46,6 @@ export default function NflSeasonLayout({
               },
               { label: season ? seasonLabel(season) : "Temporada" },
             ]}
-          />
-        }
       >
         <section className="mb-5 rounded-[18px] border border-dx-line bg-dx-card px-7 py-[26px]">
           <div className="flex flex-wrap items-start justify-between gap-4">

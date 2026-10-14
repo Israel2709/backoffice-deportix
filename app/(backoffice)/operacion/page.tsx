@@ -1,4 +1,3 @@
-import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { ClickCard } from "@/components/ui/click-card";
 import { Hero } from "@/components/ui/hero";
 import { PageHeader } from "@/components/ui/page";
@@ -7,9 +6,7 @@ export default function OperacionPage() {
   return (
     <>
       <PageHeader
-        crumbs={
-          <Breadcrumbs items={[{ label: "Operación Deportiva" }]} />
-        }
+        items={[{ label: "Operación Deportiva" }]}
       >
         <Hero
           eyebrow="Operación Deportiva"

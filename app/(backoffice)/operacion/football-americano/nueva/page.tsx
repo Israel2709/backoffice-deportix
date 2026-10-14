@@ -1,5 +1,4 @@
 import { CreateCompetitionPanel } from "@/components/nfl/create-competition-panel";
-import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { Hero } from "@/components/ui/hero";
 import { PageHeader } from "@/components/ui/page";
 
@@ -7,9 +6,7 @@ export default function NuevaCompeticionNflPage() {
   return (
     <>
       <PageHeader
-        crumbs={
-          <Breadcrumbs
-            items={[
+        items={[
               { label: "Operación Deportiva", href: "/operacion" },
               {
                 label: "Football Americano",
@@ -17,8 +14,6 @@ export default function NuevaCompeticionNflPage() {
               },
               { label: "Nueva competición" },
             ]}
-          />
-        }
       >
         <Hero
           eyebrow="Operación · NFL"

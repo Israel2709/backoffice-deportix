@@ -1,4 +1,3 @@
-import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { ClickCard } from "@/components/ui/click-card";
 import { Hero } from "@/components/ui/hero";
 import { PageHeader } from "@/components/ui/page";
@@ -7,7 +6,7 @@ export default function DatosMaestrosPage() {
   return (
     <>
       <PageHeader
-        crumbs={<Breadcrumbs items={[{ label: "Datos Maestros" }]} />}
+        items={[{ label: "Datos Maestros" }]}
       >
         <Hero
           eyebrow="Datos Maestros"

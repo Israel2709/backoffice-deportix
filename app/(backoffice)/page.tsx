@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { HomeDashboard } from "@/components/home/home-dashboard";
-import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { ClickCard } from "@/components/ui/click-card";
 import { Hero } from "@/components/ui/hero";
 import { PageHeader } from "@/components/ui/page";
@@ -8,7 +7,7 @@ import { PageHeader } from "@/components/ui/page";
 export default function HomePage() {
   return (
     <>
-      <PageHeader crumbs={<Breadcrumbs items={[{ label: "Inicio" }]} />}>
+      <PageHeader items={[{ label: "Inicio" }]}>
         <Hero
           eyebrow="Back Office"
           title="DeportiX API"

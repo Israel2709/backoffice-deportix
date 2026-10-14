@@ -1,4 +1,3 @@
-import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { ClickCard } from "@/components/ui/click-card";
 import { Hero } from "@/components/ui/hero";
 import { Note } from "@/components/ui/note";
@@ -9,14 +8,10 @@ export default function F1MaestrosPage() {
   return (
     <>
       <PageHeader
-        crumbs={
-          <Breadcrumbs
-            items={[
+        items={[
               { label: "Datos Maestros", href: "/datos-maestros" },
               { label: "Fórmula 1" },
             ]}
-          />
-        }
       >
         <Hero
           eyebrow="Datos Maestros · Fórmula 1"

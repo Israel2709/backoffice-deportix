@@ -9,7 +9,6 @@ import {
   PUBLISH_STATUS_LABEL,
 } from "@/lib/api/tennis-types";
 import { TennisEditionTabs } from "@/components/capture/tennis-edition-tabs";
-import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { PageHeader } from "@/components/ui/page";
 
@@ -31,15 +30,11 @@ export default function TennisEditionLayout({
   return (
     <>
       <PageHeader
-        crumbs={
-          <Breadcrumbs
-            items={[
+        items={[
               { label: "Operación Deportiva", href: "/operacion" },
               { label: "Tenis", href: "/operacion/tenis" },
               { label: edition ? editionLabel(edition) : "Edición" },
             ]}
-          />
-        }
       >
         <section className="mb-5 rounded-[18px] border border-dx-line bg-dx-card px-7 py-[26px]">
           <div className="flex flex-wrap items-start justify-between gap-4">

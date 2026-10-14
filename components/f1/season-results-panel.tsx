@@ -260,16 +260,14 @@ export function SeasonResultsPanel({
         onCellChange: (_rowId, columnId, value, current, row) => {
           if (columnId !== "p1_driver_id") return;
           const teamId = teamIdByDriver.get(value) ?? current.winning_team_id;
-          const next = {
+          return {
             ...current,
             p1_driver_id: value,
             winning_team_id: teamId,
+            ...(isSprintRace(row.type)
+              ? { sprint_winner: value, sprint_winning_team: teamId }
+              : {}),
           };
-          if (isSprintRace(row.type)) {
-            next.sprint_winner = value;
-            next.sprint_winning_team = teamId;
-          }
-          return next;
         },
       },
       {
@@ -309,9 +307,11 @@ export function SeasonResultsPanel({
         format: (id) => formatDriver(id),
         onCellChange: (_rowId, columnId, value, current, row) => {
           if (columnId !== "pole_driver_id") return;
-          const next = { ...current, pole_driver_id: value };
-          if (isSprintRace(row.type)) next.sprint_pole = value;
-          return next;
+          return {
+            ...current,
+            pole_driver_id: value,
+            ...(isSprintRace(row.type) ? { sprint_pole: value } : {}),
+          };
         },
       },
       {
@@ -324,9 +324,11 @@ export function SeasonResultsPanel({
         format: (id) => formatTeam(id),
         onCellChange: (_rowId, columnId, value, current, row) => {
           if (columnId !== "winning_team_id") return;
-          const next = { ...current, winning_team_id: value };
-          if (isSprintRace(row.type)) next.sprint_winning_team = value;
-          return next;
+          return {
+            ...current,
+            winning_team_id: value,
+            ...(isSprintRace(row.type) ? { sprint_winning_team: value } : {}),
+          };
         },
       },
     ];

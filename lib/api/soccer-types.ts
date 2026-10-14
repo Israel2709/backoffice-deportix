@@ -43,6 +43,7 @@ export interface SoccerOrganizationRecord {
   id: string;
   name: string;
   logo: string | null;
+  logo_alt?: string | null;
   country_id: string | null;
   country_name?: string | null;
 }

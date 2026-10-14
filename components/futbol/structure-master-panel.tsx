@@ -47,6 +47,12 @@ const leagueColumns = [
     placeholder: "Opcional",
   },
   {
+    id: "organization_name" as const,
+    header: "Organización",
+    placeholder: "—",
+    editable: false,
+  },
+  {
     id: "country_id" as const,
     header: "País",
     placeholder: "País / ámbito",
@@ -102,6 +108,7 @@ export function StructureMasterPanel() {
     return {
       name: row.name ?? "",
       name_alt: row.name_alt ?? "",
+      organization_name: row.organization_name ?? "",
       country_id: row.country_id ?? row.country_name ?? "",
       type: row.type ?? "League",
       logo: row.logo ?? "",
@@ -165,15 +172,30 @@ export function StructureMasterPanel() {
   });
 
   const createLeagueMutation = useMutation({
-    mutationFn: () =>
-      createLeague({
+    mutationFn: () => {
+      const org = organizations.find((item) => item.id === leagueOrganizationId);
+      const countryId =
+        org?.country_id?.trim() ||
+        org?.country_name?.trim() ||
+        leagueCountryId ||
+        null;
+      if (!leagueOrganizationId) {
+        throw new Error("Selecciona una organización deportiva.");
+      }
+      if (!countryId) {
+        throw new Error(
+          "La organización no tiene país. Edítala en Datos maestros · Organizaciones.",
+        );
+      }
+      return createLeague({
         name: leagueName.trim(),
         name_alt: leagueNameAlt.trim() || null,
-        country_id: leagueCountryId || null,
-        organization_id: leagueOrganizationId || null,
+        country_id: countryId,
+        organization_id: leagueOrganizationId,
         type: leagueType.trim() || "League",
         logo: leagueLogo.trim() || null,
-      }),
+      });
+    },
     onSuccess: () => {
       toast.success("Competición creada");
       setLeagueName("");
@@ -220,17 +242,13 @@ export function StructureMasterPanel() {
 
   const countries = countriesQuery.data?.data ?? [];
   const organizations = organizationsQuery.data?.data ?? [];
-  const organizationsForSelectedCountry = organizations.filter((org) => {
-    const country = countries.find((item) => item.id === leagueCountryId);
-    if (!country) return false;
-    const keys = [country.id, country.name, country.code]
-      .map((value) => (value ?? "").trim().toLowerCase())
-      .filter(Boolean);
-    return (
-      keys.includes((org.country_id ?? "").trim().toLowerCase()) ||
-      keys.includes((org.country_name ?? "").trim().toLowerCase())
-    );
-  });
+  const selectedOrganization = organizations.find(
+    (org) => org.id === leagueOrganizationId,
+  );
+  const inferredCountryLabel =
+    selectedOrganization?.country_name?.trim() ||
+    selectedOrganization?.country_id?.trim() ||
+    "";
 
   return (
     <div className="space-y-6">
@@ -284,7 +302,7 @@ export function StructureMasterPanel() {
       </Section>
 
       <Section title="Competiciones">
-        <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-[1fr_1fr_160px_1fr_120px_1fr_auto]">
+        <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-[1fr_1fr_1fr_140px_120px_1fr_auto]">
           <TextInput
             placeholder="Nombre"
             value={leagueName}
@@ -296,30 +314,32 @@ export function StructureMasterPanel() {
             onChange={(e) => setLeagueNameAlt(e.target.value)}
           />
           <TextSelect
-            value={leagueCountryId}
+            value={leagueOrganizationId}
             onChange={(e) => {
-              setLeagueCountryId(e.target.value);
-              setLeagueOrganizationId("");
+              const orgId = e.target.value;
+              setLeagueOrganizationId(orgId);
+              const org = organizations.find((item) => item.id === orgId);
+              setLeagueCountryId(
+                org?.country_id?.trim() || org?.country_name?.trim() || "",
+              );
             }}
           >
-            <option value="">País…</option>
-            {countries.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </TextSelect>
-          <TextSelect
-            value={leagueOrganizationId}
-            onChange={(e) => setLeagueOrganizationId(e.target.value)}
-          >
             <option value="">Organización…</option>
-            {organizationsForSelectedCountry.map((org) => (
+            {organizations.map((org) => (
               <option key={org.id} value={org.id}>
                 {org.name}
+                {org.country_name || org.country_id
+                  ? ` · ${org.country_name ?? org.country_id}`
+                  : ""}
               </option>
             ))}
           </TextSelect>
+          <TextInput
+            value={inferredCountryLabel}
+            readOnly
+            placeholder="País (de la org)"
+            title="Se infiere de la organización"
+          />
           <TextSelect
             value={leagueType}
             onChange={(e) => setLeagueType(e.target.value)}
@@ -335,7 +355,11 @@ export function StructureMasterPanel() {
             onChange={(e) => setLeagueLogo(e.target.value)}
           />
           <Button
-            disabled={!leagueName.trim() || createLeagueMutation.isPending}
+            disabled={
+              !leagueName.trim() ||
+              !leagueOrganizationId ||
+              createLeagueMutation.isPending
+            }
             onClick={() => createLeagueMutation.mutate()}
           >
             + Competición
@@ -361,9 +385,9 @@ export function StructureMasterPanel() {
       </Section>
 
       <Note>
-        Jerarquía País → Organización → Competición. Crea la organización del
-        país en Equipos y asígnala al crear la competición; las ligas sin
-        organización quedan en el grupo genérico.
+        Jerarquía Organización → Competición. Crea organizaciones en Datos
+        maestros · Organizaciones; el país de la competición se infiere de la
+        organización. Las ligas sin organización quedan en el grupo genérico.
       </Note>
     </div>
   );

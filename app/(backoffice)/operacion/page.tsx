@@ -20,7 +20,7 @@ export default function OperacionPage() {
           href="/operacion/futbol"
           icon="⚽"
           title="Fútbol"
-          description="Temporadas, participantes, estructura, partidos y resultados."
+          description="Temporada → organización → competición → partidos."
         />
         <ClickCard
           href="/operacion/football-americano"

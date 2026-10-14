@@ -1,15 +1,30 @@
 "use client";
 
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { use } from "react";
-import { getAdminLeague, getAdminSeason } from "@/lib/api/admin-soccer";
+import {
+  getAdminLeague,
+  getAdminOrganization,
+  getAdminSeason,
+} from "@/lib/api/admin-soccer";
 import {
   SEASON_STATUS_LABEL,
+  parseSeasonId,
   seasonLabel,
 } from "@/lib/api/soccer-types";
+import {
+  DEFAULT_ORGANIZATION_ID,
+  soccerOrgCompetitionsHref,
+} from "@/lib/api/soccer-structure";
+import {
+  SOCCER_COMPETITION_RECENT_MAX,
+  soccerCompetitionRecentKey,
+} from "@/components/futbol/recent-keys";
 import { SeasonTabs } from "@/components/capture/season-tabs";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { PageHeader } from "@/components/ui/page";
+import { useRecordRecentVisit } from "@/hooks/use-recent-visits";
 
 export default function SeasonLayout({
   children,
@@ -28,18 +43,67 @@ export default function SeasonLayout({
     queryFn: () => getAdminSeason(seasonId),
   });
 
-  const leagueName = leagueQuery.data?.data.name ?? "Competición";
+  const league = leagueQuery.data?.data;
+  const leagueName = league?.name ?? "Competición";
   const season = seasonQuery.data?.data;
+
+  const year = useMemo(() => {
+    try {
+      return parseSeasonId(decodeURIComponent(seasonId)).year;
+    } catch {
+      return season?.year ?? null;
+    }
+  }, [seasonId, season?.year]);
+
+  const orgId =
+    league?.organization_id?.trim() || DEFAULT_ORGANIZATION_ID;
+
+  const orgQuery = useQuery({
+    queryKey: ["admin", "soccer", "organizations", orgId],
+    queryFn: () => getAdminOrganization(orgId),
+    enabled: Boolean(orgId),
+  });
+
+  const orgName =
+    orgQuery.data?.data.name ??
+    league?.organization_name ??
+    (orgId === DEFAULT_ORGANIZATION_ID ? "Sin organización" : "Organización");
+
+  const yearLabel = year != null ? String(year) : "Temporada";
+  const competitionsHref =
+    year != null ? soccerOrgCompetitionsHref(year, orgId) : "/operacion/futbol";
+
+  const recentItem = useMemo(() => {
+    if (year == null || !leagueId) return null;
+    return {
+      id: leagueId,
+      label: leagueName,
+      href: `/operacion/futbol/${encodeURIComponent(leagueId)}/${encodeURIComponent(seasonId)}/partidos`,
+    };
+  }, [year, leagueId, leagueName, seasonId]);
+
+  useRecordRecentVisit(
+    year != null
+      ? soccerCompetitionRecentKey(year, orgId)
+      : "operacion:futbol:competitions:unknown",
+    recentItem,
+    SOCCER_COMPETITION_RECENT_MAX,
+  );
 
   return (
     <>
       <PageHeader
         items={[
-              { label: "Operación Deportiva", href: "/operacion" },
-              { label: "Fútbol", href: "/operacion/futbol" },
-              { label: leagueName, href: `/operacion/futbol/${leagueId}` },
-              { label: season ? seasonLabel(season) : "Temporada" },
-            ]}
+          { label: "Operación Deportiva", href: "/operacion" },
+          { label: "Fútbol", href: "/operacion/futbol" },
+          {
+            label: yearLabel,
+            href: `/operacion/futbol/temporada/${encodeURIComponent(yearLabel)}`,
+          },
+          { label: orgName, href: competitionsHref },
+          { label: leagueName },
+        ]}
+        backLabel="Competiciones"
       >
         <section className="mb-5 rounded-[18px] border border-dx-line bg-dx-card px-7 py-[26px]">
           <div className="flex flex-wrap items-start justify-between gap-4">

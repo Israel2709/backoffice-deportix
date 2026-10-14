@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
+import { LogoUrlOrFileField } from "@/components/capture/logo-url-or-file-field";
 import { Field, TextInput } from "@/components/capture/field";
 import { MasterSelectList } from "@/components/futbol/master-select-list";
 import { Button } from "@/components/ui/button";
@@ -126,6 +127,7 @@ export function EquiposOrganizationScreen({ countryId }: { countryId: string }) 
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [logo, setLogo] = useState("");
+  const [logoAlt, setLogoAlt] = useState("");
   const countryName = country?.name ?? "País";
 
   const createMutation = useMutation({
@@ -137,6 +139,7 @@ export function EquiposOrganizationScreen({ countryId }: { countryId: string }) 
         name,
         countryName: country.name,
         logo,
+        logo_alt: logoAlt.trim() || null,
       }).then((res) => res.data);
     },
     onSuccess: () => {
@@ -144,6 +147,7 @@ export function EquiposOrganizationScreen({ countryId }: { countryId: string }) 
       setCreating(false);
       setName("");
       setLogo("");
+      setLogoAlt("");
       void queryClient.invalidateQueries({
         queryKey: ["admin", "soccer", "organizations"],
       });
@@ -179,6 +183,16 @@ export function EquiposOrganizationScreen({ countryId }: { countryId: string }) 
       {creating ? (
         <div className="mb-5 rounded-2xl border border-dx-line bg-dx-card p-5">
           <h3 className="text-lg font-semibold">Nueva organización</h3>
+          <p className="mt-1 text-[13px] text-dx-muted">
+            También puedes administrar el catálogo completo en{" "}
+            <Link
+              href="/datos-maestros/futbol/organizaciones"
+              className="font-semibold text-dx-blue underline"
+            >
+              Datos maestros · Organizaciones
+            </Link>
+            .
+          </p>
           <div className="mt-3.5 grid grid-cols-1 gap-3.5 md:grid-cols-2">
             <Field label="Nombre">
               <TextInput
@@ -187,13 +201,18 @@ export function EquiposOrganizationScreen({ countryId }: { countryId: string }) 
                 placeholder="Federación Mexicana de Fútbol"
               />
             </Field>
-            <Field label="Logo (URL)">
-              <TextInput
-                value={logo}
-                onChange={(e) => setLogo(e.target.value)}
-                placeholder="https://…"
-              />
-            </Field>
+            <LogoUrlOrFileField
+              label="Logo"
+              value={logo}
+              folder="logos/soccer/organizations"
+              onChange={setLogo}
+            />
+            <LogoUrlOrFileField
+              label="Logo alternativo"
+              value={logoAlt}
+              folder="logos/soccer/organizations"
+              onChange={setLogoAlt}
+            />
           </div>
           <div className="mt-4 flex gap-2">
             <Button
@@ -202,6 +221,7 @@ export function EquiposOrganizationScreen({ countryId }: { countryId: string }) 
                 setCreating(false);
                 setName("");
                 setLogo("");
+                setLogoAlt("");
               }}
             >
               Cancelar

@@ -22,8 +22,15 @@ import {
   parseSeasonId,
   seasonIdFor,
 } from "./soccer-types";
+import {
+  DEFAULT_ORGANIZATION_ID,
+  isDefaultOrganizationId,
+  organizationsForSeasonYear,
+  type SoccerNavOrganization,
+} from "./soccer-structure";
 
 export type { MatchBoStatus, SeasonStatus };
+export type { SoccerNavOrganization };
 
 type List<T> = Promise<ApiListResponse<T>>;
 type One<T> = Promise<{ data: T }>;
@@ -67,6 +74,7 @@ type BffOrganization = {
   id: string;
   name: string;
   logo?: string | null;
+  logo_alt?: string | null;
   country?: {
     name?: string | null;
     code?: string | null;
@@ -192,6 +200,7 @@ function mapOrganization(entry: BffOrganization): SoccerOrganizationRecord {
     id: entry.id,
     name: entry.name,
     logo: entry.logo ?? null,
+    logo_alt: entry.logo_alt ?? null,
     country_id: countryName,
     country_name: countryName,
   };
@@ -463,9 +472,91 @@ export async function listAdminOrganizations(country?: string): List<SoccerOrgan
   }
 }
 
+export async function getAdminOrganization(
+  id: string,
+): One<SoccerOrganizationRecord> {
+  if (isDefaultOrganizationId(id)) {
+    return {
+      data: {
+        id: DEFAULT_ORGANIZATION_ID,
+        name: "Sin organización",
+        logo: null,
+        logo_alt: null,
+        country_id: null,
+        country_name: null,
+      },
+    };
+  }
+  const { data } = await listAdminOrganizations();
+  const key = id.trim().toLowerCase();
+  const found = data.find((org) => org.id.trim().toLowerCase() === key);
+  if (!found) throw new Error(`Organization not found: ${id}`);
+  return { data: found };
+}
+
+/**
+ * Global soccer season years from the seasons catalog
+ * (`GET /leagues/seasons` without `league`) — same idea as F1 `GET /formula-1/seasons`.
+ */
+export async function listAdminSeasonYears(): List<number> {
+  const years = await bffRequest<number[]>("leagues/seasons");
+  return {
+    data: asList(years)
+      .filter((year) => Number.isFinite(year))
+      .sort((a, b) => b - a),
+  };
+}
+
+/**
+ * Organizations for the season-first nav step.
+ * Loads the organizations catalog only — does not call `leagues?season=`
+ * (that used to N+1 every soccer league and hang Operación).
+ * League counts are filled on the competitions step instead.
+ */
+export async function listOrganizationsForSeasonYear(
+  _year: number,
+): List<SoccerNavOrganization> {
+  const { data: orgs } = await listAdminOrganizations();
+  return { data: organizationsForSeasonYear([], orgs) };
+}
+
+/** Competitions for an org in a season — scoped BFF query (no full-catalog walk). */
+export async function listLeaguesForOrgSeasonYear(
+  orgId: string,
+  year: number,
+): List<SoccerLeague> {
+  if (isDefaultOrganizationId(orgId)) {
+    const response = await bffRequest<BffLeagueEntry[]>(
+      `leagues?season=${encodeURIComponent(String(year))}`,
+    );
+    const data = asList(response)
+      .map((entry) => {
+        const id = leagueExternalId(entry);
+        if (!id) return null;
+        const league = mapLeague(entry, id);
+        if (league.organization_id?.trim()) return null;
+        return league;
+      })
+      .filter((league): league is SoccerLeague => league != null);
+    return { data };
+  }
+
+  const response = await bffRequest<BffLeagueEntry[]>(
+    `leagues?organization=${encodeURIComponent(orgId)}&season=${encodeURIComponent(String(year))}`,
+  );
+  const data = asList(response)
+    .map((entry) => {
+      const id = leagueExternalId(entry);
+      return id ? mapLeague(entry, id) : null;
+    })
+    .filter((league): league is SoccerLeague => league != null);
+  return { data };
+}
+
 export async function createOrganization(body: {
   name: string;
   logo?: string | null;
+  logo_alt?: string | null;
   countryName: string;
 }): One<SoccerOrganizationRecord> {
   const name = body.name.trim();
@@ -478,12 +569,39 @@ export async function createOrganization(body: {
     body: JSON.stringify({
       name,
       logo: body.logo?.trim() || null,
+      logo_alt: body.logo_alt?.trim() || null,
       country: { name: countryName, code: null, flag: null },
     }),
   });
   const created = firstOf(response);
   if (!created) throw new Error("Organization create returned empty response");
   return { data: mapOrganization(created) };
+}
+
+export async function updateOrganization(
+  id: string,
+  body: {
+    name: string;
+    logo?: string | null;
+    logo_alt?: string | null;
+  },
+): One<SoccerOrganizationRecord> {
+  const name = body.name.trim();
+  if (!name) throw new Error("El nombre de la organización es obligatorio.");
+  const response = await bffRequest<BffOrganization[] | BffOrganization>(
+    `organizations?id=${encodeURIComponent(id)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        name,
+        logo: body.logo?.trim() || null,
+        logo_alt: body.logo_alt?.trim() || null,
+      }),
+    },
+  );
+  const updated = firstOf(response);
+  if (!updated) throw new Error("Organization update returned empty response");
+  return { data: mapOrganization(updated) };
 }
 
 export async function deleteOrganization(id: string): Promise<void> {
@@ -532,6 +650,7 @@ export async function updateLeague(
     name: string;
     name_alt: string | null;
     country_id: string | null;
+    organization_id: string | null;
     type: string;
     logo: string | null;
     logo_alt: string | null;
@@ -548,6 +667,11 @@ export async function updateLeague(
       end: s.end ?? null,
       current: Boolean(s.current),
     }));
+
+  const organizationId =
+    body.organization_id !== undefined
+      ? body.organization_id?.trim() || null
+      : current.organization?.id ?? null;
 
   const response = await bffRequest<BffLeagueEntry[] | BffLeagueEntry>(
     `leagues?id=${encodeURIComponent(id)}`,
@@ -567,6 +691,9 @@ export async function updateLeague(
           code: current.country?.code ?? null,
           flag: current.country?.flag ?? null,
         },
+        ...(organizationId
+          ? { organization: { id: organizationId } }
+          : { organization: null }),
         seasons,
       }),
     },
@@ -689,14 +816,9 @@ export async function deleteTeam(id: string): Promise<void | {
 
 export async function listAdminSeasons(leagueId?: string): List<SoccerSeason> {
   if (!leagueId) {
-    const leagues = await listAdminLeagues();
-    const all: SoccerSeason[] = [];
-    for (const league of leagues.data) {
-      if (!league.id) continue;
-      const { data } = await listAdminSeasons(league.id);
-      all.push(...data);
-    }
-    return { data: all };
+    throw new Error(
+      "leagueId is required. Use listAdminSeasonYears() for the global seasons catalog.",
+    );
   }
 
   const entry = await fetchLeagueEntry(leagueId);

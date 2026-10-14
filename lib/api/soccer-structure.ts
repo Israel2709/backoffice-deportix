@@ -189,3 +189,92 @@ export function equiposHref(countryId?: string, orgId?: string, leagueId?: strin
   if (countryId && orgId && leagueId) parts.push(encodeURIComponent(leagueId));
   return parts.join("/");
 }
+
+/** Org card used in Operación season-first navigation. */
+export type SoccerNavOrganization = {
+  id: string;
+  name: string;
+  logo: string | null;
+  country_id: string | null;
+  country_name: string | null;
+  leagues: SoccerLeague[];
+};
+
+/**
+ * Build org cards for a season year: every stored org (even with 0 leagues that
+ * year, so alta under org works) plus a "Sin organización" bucket when needed.
+ */
+export function organizationsForSeasonYear(
+  yearLeagues: SoccerLeague[],
+  stored: SoccerOrganizationRecord[],
+): SoccerNavOrganization[] {
+  const byOrg = new Map<string, SoccerLeague[]>();
+  const unassigned: SoccerLeague[] = [];
+
+  for (const league of yearLeagues) {
+    const orgId = league.organization_id?.trim();
+    if (!orgId) {
+      unassigned.push(league);
+      continue;
+    }
+    const list = byOrg.get(orgId) ?? [];
+    list.push(league);
+    byOrg.set(orgId, list);
+  }
+
+  const rows: SoccerNavOrganization[] = stored
+    .map((org) => {
+      const leagues = (byOrg.get(org.id) ?? []).sort((a, b) =>
+        a.name.localeCompare(b.name, "es"),
+      );
+      return {
+        id: org.id,
+        name: org.name,
+        logo: org.logo ?? null,
+        country_id: org.country_id,
+        country_name: org.country_name ?? null,
+        leagues,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, "es"));
+
+  // Orgs referenced by leagues but missing from /organizations catalog
+  for (const [orgId, leagues] of byOrg) {
+    if (rows.some((row) => normalize(row.id) === normalize(orgId))) continue;
+    const sample = leagues[0];
+    rows.push({
+      id: orgId,
+      name: sample?.organization_name?.trim() || orgId,
+      logo: null,
+      country_id: sample?.country_id ?? null,
+      country_name: sample?.country_name ?? null,
+      leagues: leagues.sort((a, b) => a.name.localeCompare(b.name, "es")),
+    });
+  }
+
+  if (unassigned.length > 0) {
+    rows.push({
+      id: DEFAULT_ORGANIZATION_ID,
+      name: "Sin organización",
+      logo: null,
+      country_id: null,
+      country_name: null,
+      leagues: unassigned.sort((a, b) => a.name.localeCompare(b.name, "es")),
+    });
+  }
+
+  return rows.sort((a, b) => a.name.localeCompare(b.name, "es"));
+}
+
+export function isDefaultOrganizationId(orgId: string): boolean {
+  return normalize(safeDecode(orgId)) === normalize(DEFAULT_ORGANIZATION_ID);
+}
+
+export function soccerPartidosHref(leagueId: string, year: number): string {
+  const seasonId = `${leagueId}:${year}`;
+  return `/operacion/futbol/${encodeURIComponent(leagueId)}/${encodeURIComponent(seasonId)}/partidos`;
+}
+
+export function soccerOrgCompetitionsHref(year: number | string, orgId: string): string {
+  return `/operacion/futbol/temporada/${encodeURIComponent(String(year))}/organizacion/${encodeURIComponent(orgId)}`;
+}

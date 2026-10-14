@@ -3,9 +3,9 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  CountryCard,
-  CountryCardsGrid,
-} from "@/components/ui/country-card";
+  SeasonYearCard,
+  SeasonYearsGrid,
+} from "@/components/ui/season-year-card";
 import { RecentlyVisited } from "@/components/ui/recently-visited";
 import { Note } from "@/components/ui/note";
 import { LoadingBlock } from "@/components/ui/spinner";
@@ -20,10 +20,12 @@ export function SeasonsYearsPanel() {
     queryFn: listAdminSeasonYears,
   });
 
-  const years = useMemo(
-    () => [...(seasonsQuery.data?.data ?? [])].sort((a, b) => b - a),
-    [seasonsQuery.data?.data],
-  );
+  const years = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    return [...(seasonsQuery.data?.data ?? [])]
+      .filter((year) => Number.isFinite(year) && year <= currentYear)
+      .sort((a, b) => b - a);
+  }, [seasonsQuery.data?.data]);
 
   if (seasonsQuery.isLoading) {
     return <LoadingBlock compact label="Cargando temporadas…" />;
@@ -63,16 +65,15 @@ export function SeasonsYearsPanel() {
           <RecentlyVisited items={recentSeasons} />
         </div>
       ) : null}
-      <CountryCardsGrid>
+      <SeasonYearsGrid>
         {years.map((year) => (
-          <CountryCard
+          <SeasonYearCard
             key={year}
+            year={year}
             href={`/operacion/formula-1/temporada/${year}`}
-            name={String(year)}
-            mediaLabel={String(year)}
           />
         ))}
-      </CountryCardsGrid>
+      </SeasonYearsGrid>
       <Note className="mt-5">
         Flujo: Temporada → Competición → Participantes → Calendario →
         Clasificaciones.

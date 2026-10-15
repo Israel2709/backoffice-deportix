@@ -42,6 +42,7 @@ export interface SoccerLeague {
 export interface SoccerOrganizationRecord {
   id: string;
   name: string;
+  abbreviation?: string | null;
   logo: string | null;
   logo_alt?: string | null;
   country_id: string | null;
@@ -78,7 +79,7 @@ export interface SoccerSeason {
   status?: SeasonStatus;
 }
 
-/** Synthetic — MVP has no participants resource; derived from league teams. */
+/** Season roster row (`soccer_season_participants`). */
 export interface SoccerParticipant {
   id: string;
   season_id: string;
@@ -116,6 +117,9 @@ export interface SoccerMatch {
 export interface SoccerStanding {
   id: string;
   team_id: string;
+  /** Denormalized from BFF standings payload (available before team lookup). */
+  team_name?: string | null;
+  team_logo?: string | null;
   season_id: string;
   league_id: string;
   rank?: number;
@@ -134,7 +138,12 @@ export function teamDisplayName(team: SoccerTeam): string {
 }
 
 export function teamCode(team: SoccerTeam): string {
-  return team.team?.code ?? team.name_short ?? "—";
+  return (team.team?.code ?? team.name_short ?? "").trim();
+}
+
+/** Primary logo, falling back to logo_alt. */
+export function teamLogoUrl(team: SoccerTeam): string | null {
+  return team.team?.logo?.trim() || team.logo_alt?.trim() || null;
 }
 
 export function seasonLabel(season: SoccerSeason): string {
@@ -160,14 +169,20 @@ export function seasonIdFor(leagueId: string, year: number): string {
 }
 
 export function parseSeasonId(seasonId: string): { leagueId: string; year: number } {
-  const idx = seasonId.lastIndexOf(":");
+  let raw = seasonId;
+  try {
+    raw = decodeURIComponent(seasonId);
+  } catch {
+    raw = seasonId;
+  }
+  const idx = raw.lastIndexOf(":");
   if (idx <= 0) {
     throw new Error(
       `Invalid season id "${seasonId}". Expected format leagueId:year (e.g. 262:2024).`,
     );
   }
-  const leagueId = seasonId.slice(0, idx);
-  const year = Number(seasonId.slice(idx + 1));
+  const leagueId = raw.slice(0, idx);
+  const year = Number(raw.slice(idx + 1));
   if (!leagueId || !Number.isFinite(year)) {
     throw new Error(
       `Invalid season id "${seasonId}". Expected format leagueId:year (e.g. 262:2024).`,

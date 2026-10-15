@@ -19,6 +19,7 @@ import { LoadingBlock } from "@/components/ui/spinner";
 
 type OrgForm = {
   name: string;
+  abbreviation: string;
   countryName: string;
   logo: string;
   logo_alt: string;
@@ -26,6 +27,7 @@ type OrgForm = {
 
 const emptyForm = (): OrgForm => ({
   name: "",
+  abbreviation: "",
   countryName: "",
   logo: "",
   logo_alt: "",
@@ -34,6 +36,7 @@ const emptyForm = (): OrgForm => ({
 function toForm(org: SoccerOrganizationRecord): OrgForm {
   return {
     name: org.name ?? "",
+    abbreviation: org.abbreviation ?? "",
     countryName: org.country_name ?? org.country_id ?? "",
     logo: org.logo ?? "",
     logo_alt: org.logo_alt ?? "",
@@ -61,7 +64,7 @@ export function OrganizationsMasterPanel() {
     const q = search.trim().toLowerCase();
     if (!q) return rows;
     return rows.filter((org) =>
-      [org.name, org.country_name, org.country_id]
+      [org.name, org.abbreviation, org.country_name, org.country_id]
         .filter(Boolean)
         .join(" ")
         .toLowerCase()
@@ -73,6 +76,7 @@ export function OrganizationsMasterPanel() {
     mutationFn: async () => {
       const payload = {
         name: form.name.trim(),
+        abbreviation: form.abbreviation.trim() || null,
         logo: form.logo.trim() || null,
         logo_alt: form.logo_alt.trim() || null,
         countryName: form.countryName.trim(),
@@ -84,6 +88,7 @@ export function OrganizationsMasterPanel() {
       if (editingId) {
         return updateOrganization(editingId, {
           name: payload.name,
+          abbreviation: payload.abbreviation,
           logo: payload.logo,
           logo_alt: payload.logo_alt,
         });
@@ -162,6 +167,15 @@ export function OrganizationsMasterPanel() {
                 autoFocus
               />
             </Field>
+            <Field label="Siglas">
+              <TextInput
+                value={form.abbreviation}
+                placeholder="FMF, CONMEBOL, UEFA…"
+                onChange={(e) =>
+                  setForm({ ...form, abbreviation: e.target.value })
+                }
+              />
+            </Field>
             <Field label="País / ámbito">
               <TextSelect
                 value={form.countryName}
@@ -229,6 +243,7 @@ export function OrganizationsMasterPanel() {
           <thead className="border-b border-dx-line bg-[#f7f9fc] text-[12px] font-bold uppercase tracking-wide text-dx-muted">
             <tr>
               <th className="px-4 py-3">Organización</th>
+              <th className="px-4 py-3">Siglas</th>
               <th className="px-4 py-3">País</th>
               <th className="px-4 py-3 w-[160px]">Acciones</th>
             </tr>
@@ -237,7 +252,7 @@ export function OrganizationsMasterPanel() {
             {organizations.length === 0 ? (
               <tr>
                 <td
-                  colSpan={3}
+                  colSpan={4}
                   className="px-4 py-10 text-center text-dx-muted"
                 >
                   No hay organizaciones. Crea la primera arriba.
@@ -260,7 +275,7 @@ export function OrganizationsMasterPanel() {
                         />
                       ) : (
                         <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-dx-line bg-[#eef4ff] text-[11px] font-bold text-dx-blue">
-                          {org.name.slice(0, 2).toUpperCase()}
+                          {(org.abbreviation || org.name).slice(0, 2).toUpperCase()}
                         </div>
                       )}
                       <div>
@@ -274,6 +289,9 @@ export function OrganizationsMasterPanel() {
                         ) : null}
                       </div>
                     </div>
+                  </td>
+                  <td className="px-4 py-3 text-dx-muted">
+                    {org.abbreviation || "—"}
                   </td>
                   <td className="px-4 py-3 text-dx-muted">
                     {org.country_name ?? org.country_id ?? "—"}

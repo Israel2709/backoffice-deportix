@@ -10,6 +10,7 @@ export const DEFAULT_ORGANIZATION_ID = "organizacion";
 export type SoccerOrganization = {
   id: string;
   name: string;
+  abbreviation?: string | null;
   countryId: string;
   leagues: SoccerLeague[];
   logo?: string | null;
@@ -138,6 +139,7 @@ export function organizationsForCountry(
     .map((row) => ({
       id: row.id,
       name: row.name,
+      abbreviation: row.abbreviation ?? null,
       countryId: country.id,
       leagues: countryLeagues.filter(
         (league) => normalize(league.organization_id) === normalize(row.id),
@@ -252,18 +254,21 @@ export function organizationsForSeasonYear(
     });
   }
 
-  if (unassigned.length > 0) {
-    rows.push({
-      id: DEFAULT_ORGANIZATION_ID,
-      name: "Sin organización",
-      logo: null,
-      country_id: null,
-      country_name: null,
-      leagues: unassigned.sort((a, b) => a.name.localeCompare(b.name, "es")),
-    });
-  }
+  // Always expose the orphan bucket so operators can assign organizations.
+  rows.push({
+    id: DEFAULT_ORGANIZATION_ID,
+    name: "Sin organización deportiva",
+    logo: null,
+    country_id: null,
+    country_name: null,
+    leagues: unassigned.sort((a, b) => a.name.localeCompare(b.name, "es")),
+  });
 
-  return rows.sort((a, b) => a.name.localeCompare(b.name, "es"));
+  return rows.sort((a, b) => {
+    if (a.id === DEFAULT_ORGANIZATION_ID) return 1;
+    if (b.id === DEFAULT_ORGANIZATION_ID) return -1;
+    return a.name.localeCompare(b.name, "es");
+  });
 }
 
 export function isDefaultOrganizationId(orgId: string): boolean {

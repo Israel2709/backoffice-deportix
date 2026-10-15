@@ -73,6 +73,7 @@ type BffLeagueEntry = {
 type BffOrganization = {
   id: string;
   name: string;
+  abbreviation?: string | null;
   logo?: string | null;
   logo_alt?: string | null;
   country?: {
@@ -199,6 +200,7 @@ function mapOrganization(entry: BffOrganization): SoccerOrganizationRecord {
   return {
     id: entry.id,
     name: entry.name,
+    abbreviation: entry.abbreviation ?? null,
     logo: entry.logo ?? null,
     logo_alt: entry.logo_alt ?? null,
     country_id: countryName,
@@ -332,6 +334,8 @@ function flattenStandings(
           // BFF list does not expose Firestore standing doc ids.
           id: `${seasonId}:${teamId}`,
           team_id: teamId,
+          team_name: row.team?.name?.trim() || null,
+          team_logo: row.team?.logo?.trim() || null,
           season_id: seasonId,
           league_id: leagueId,
           rank: row.rank ?? undefined,
@@ -480,6 +484,7 @@ export async function getAdminOrganization(
       data: {
         id: DEFAULT_ORGANIZATION_ID,
         name: "Sin organización",
+        abbreviation: null,
         logo: null,
         logo_alt: null,
         country_id: null,
@@ -508,16 +513,26 @@ export async function listAdminSeasonYears(): List<number> {
 }
 
 /**
- * Organizations for the season-first nav step.
- * Loads the organizations catalog only — does not call `leagues?season=`
- * (that used to N+1 every soccer league and hang Operación).
- * League counts are filled on the competitions step instead.
+ * Organizations for the season-first nav step, including the
+ * "Sin organización deportiva" bucket for leagues without organization_id.
+ * Uses `leagues?season=` (indexed by year on the API — no per-league N+1).
  */
 export async function listOrganizationsForSeasonYear(
-  _year: number,
+  year: number,
 ): List<SoccerNavOrganization> {
-  const { data: orgs } = await listAdminOrganizations();
-  return { data: organizationsForSeasonYear([], orgs) };
+  const [leagueResponse, { data: orgs }] = await Promise.all([
+    bffRequest<BffLeagueEntry[]>(
+      `leagues?season=${encodeURIComponent(String(year))}`,
+    ),
+    listAdminOrganizations(),
+  ]);
+  const yearLeagues: SoccerLeague[] = [];
+  for (const entry of asList(leagueResponse)) {
+    const id = leagueExternalId(entry);
+    if (!id) continue;
+    yearLeagues.push(mapLeague(entry, id));
+  }
+  return { data: organizationsForSeasonYear(yearLeagues, orgs) };
 }
 
 /** Competitions for an org in a season — scoped BFF query (no full-catalog walk). */
@@ -555,6 +570,7 @@ export async function listLeaguesForOrgSeasonYear(
 
 export async function createOrganization(body: {
   name: string;
+  abbreviation?: string | null;
   logo?: string | null;
   logo_alt?: string | null;
   countryName: string;
@@ -568,6 +584,7 @@ export async function createOrganization(body: {
     method: "POST",
     body: JSON.stringify({
       name,
+      abbreviation: body.abbreviation?.trim() || null,
       logo: body.logo?.trim() || null,
       logo_alt: body.logo_alt?.trim() || null,
       country: { name: countryName, code: null, flag: null },
@@ -582,6 +599,7 @@ export async function updateOrganization(
   id: string,
   body: {
     name: string;
+    abbreviation?: string | null;
     logo?: string | null;
     logo_alt?: string | null;
   },
@@ -594,6 +612,7 @@ export async function updateOrganization(
       method: "PATCH",
       body: JSON.stringify({
         name,
+        abbreviation: body.abbreviation?.trim() || null,
         logo: body.logo?.trim() || null,
         logo_alt: body.logo_alt?.trim() || null,
       }),
@@ -705,37 +724,68 @@ export async function updateLeague(
 
 // ─── Teams ────────────────────────────────────────────────────────────────────
 
-export async function listAdminTeams(leagueId?: string): List<SoccerTeam> {
+export async function listAdminTeams(
+  leagueId?: string,
+  seasonYear?: number,
+): List<SoccerTeam> {
   if (leagueId) {
-    const response = await bffRequest<BffTeamEntry[]>(
-      `teams?league=${encodeURIComponent(leagueId)}`,
-    );
+    const qs = new URLSearchParams({ league: leagueId });
+    if (seasonYear != null) qs.set("season", String(seasonYear));
+    const response = await bffRequest<BffTeamEntry[]>(`teams?${qs.toString()}`);
     return { data: asList(response).map((t) => mapTeam(t, leagueId)) };
   }
 
-  const leagues = await listAdminLeagues();
-  const all: SoccerTeam[] = [];
-  for (const league of leagues.data) {
-    if (!league.id) continue;
-    try {
-      const response = await bffRequest<BffTeamEntry[]>(
-        `teams?league=${encodeURIComponent(league.id)}`,
-      );
-      for (const t of asList(response)) {
-        all.push(mapTeam(t, league.id));
-      }
-    } catch {
-      /* skip leagues that fail team fetch */
-    }
-  }
-  return { data: all };
+  throw new Error(
+    "listAdminTeams requiere leagueId. Usa listTeamsByIds() para resolver equipos sueltos.",
+  );
 }
 
+type V1Team = {
+  id: string;
+  externalId?: string | null;
+  leagueId?: string | null;
+  name?: string | null;
+  code?: string | null;
+  country?: string | null;
+  logo?: string | null;
+  altLogo?: string | null;
+};
+
+function mapV1Team(dto: V1Team, leagueId?: string | null): SoccerTeam {
+  return {
+    id: dto.id,
+    league_id: leagueId ?? dto.leagueId ?? "",
+    name_short: dto.code ?? null,
+    logo_alt: dto.altLogo ?? null,
+    status: "active",
+    team: {
+      id: dto.externalId?.trim() || dto.id,
+      name: dto.name ?? "",
+      code: dto.code ?? null,
+      country: dto.country ?? null,
+      logo: dto.logo ?? null,
+    },
+  };
+}
+
+/** Resolve one soccer team by Firestore id or external_id via `GET /v1/teams/{id}`. */
 export async function getAdminTeam(id: string): One<SoccerTeam> {
-  const teams = await listAdminTeams();
-  const found = teams.data.find((t) => t.id === id);
-  if (!found) throw new Error(`Team not found: ${id}`);
-  return { data: found };
+  const dto = await v1Request<V1Team>(`v1/teams/${encodeURIComponent(id)}`);
+  if (!dto?.id) throw new Error(`Team not found: ${id}`);
+  return { data: mapV1Team(dto) };
+}
+
+/** Fetch teams one-by-id (deduped). Skips missing ids. */
+export async function listTeamsByIds(ids: string[]): List<SoccerTeam> {
+  const unique = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
+  const settled = await Promise.allSettled(
+    unique.map(async (id) => (await getAdminTeam(id)).data),
+  );
+  const data: SoccerTeam[] = [];
+  for (const result of settled) {
+    if (result.status === "fulfilled") data.push(result.value);
+  }
+  return { data };
 }
 
 export async function createTeam(body: {
@@ -938,15 +988,46 @@ export async function updateSeason(
   return getAdminSeason(seasonIdFor(leagueId, year));
 }
 
-// ─── Participants (stub — MVP has no participants resource) ───────────────────
+// ─── Participants (soccer_season_participants via v1) ─────────────────────────
+
+type V1Participant = {
+  id: string;
+  season_id: string;
+  league_id: string;
+  team_id: string;
+  external_id?: string | null;
+};
+
+function mapV1Participant(row: V1Participant, seasonId: string, leagueId: string): SoccerParticipant {
+  return {
+    id: row.id || `${seasonId}:${row.team_id}`,
+    season_id: seasonId,
+    league_id: row.league_id || leagueId,
+    team_id: row.team_id,
+  };
+}
 
 /**
- * MVP has no season participants collection. We derive participants from
- * GET `/teams?league=` for the season's league.
+ * Season roster from `GET /v1/leagues/{leagueId}/seasons/{year}/participants`.
+ * Falls back to `teams?league=&season=` while participants are still empty.
  */
 export async function listParticipants(seasonId: string): List<SoccerParticipant> {
-  const { leagueId } = parseSeasonId(seasonId);
-  const teams = await listAdminTeams(leagueId);
+  const { leagueId, year } = parseSeasonId(seasonId);
+  try {
+    const rows = await v1Request<V1Participant[] | V1Participant>(
+      `v1/leagues/${encodeURIComponent(leagueId)}/seasons/${year}/participants`,
+    );
+    const list = asList(rows);
+    if (list.length > 0) {
+      return {
+        data: list.map((row) => mapV1Participant(row, seasonId, leagueId)),
+      };
+    }
+  } catch {
+    /* fall through to BFF teams while API/deploy catches up */
+  }
+
+  const teams = await listAdminTeams(leagueId, year);
   return {
     data: teams.data.map((team) => ({
       id: `${seasonId}:${team.id}`,
@@ -957,16 +1038,22 @@ export async function listParticipants(seasonId: string): List<SoccerParticipant
   };
 }
 
-/**
- * No-op save: MVP cannot persist season participants separately from league teams.
- * Returns the current league teams mapped as participants (ignores teamIds edits).
- */
+/** Replace the full participant set for a competition season. */
 export async function replaceParticipants(
   seasonId: string,
-  _teamIds: string[],
+  teamIds: string[],
 ): List<SoccerParticipant> {
-  // Intentionally ignore _teamIds — there is no participants write API on MVP BFF.
-  return listParticipants(seasonId);
+  const { leagueId, year } = parseSeasonId(seasonId);
+  const rows = await v1Request<V1Participant[] | V1Participant>(
+    `v1/leagues/${encodeURIComponent(leagueId)}/seasons/${year}/participants`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ team_ids: teamIds }),
+    },
+  );
+  return {
+    data: asList(rows).map((row) => mapV1Participant(row, seasonId, leagueId)),
+  };
 }
 
 // ─── Rounds ───────────────────────────────────────────────────────────────────

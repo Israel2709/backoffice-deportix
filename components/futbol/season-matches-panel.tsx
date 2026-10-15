@@ -8,7 +8,7 @@ import {
   listParticipants,
   listRounds,
   listSeasonMatches,
-  listAdminTeams,
+  listTeamsByIds,
   saveMatchesBatch,
 } from "@/lib/api/admin-soccer";
 import {
@@ -30,6 +30,8 @@ type MatchRow = {
   id?: string;
   home_team_id: string;
   away_team_id: string;
+  home_label: string;
+  away_label: string;
   date: string;
   time: string;
   status: MatchBoStatus;
@@ -38,6 +40,27 @@ type MatchRow = {
   round_id: string;
   round_name: string;
 };
+
+function buildTeamLookups(teams: SoccerTeam[]) {
+  const byId = new Map<string, SoccerTeam>();
+  const byExternal = new Map<string, SoccerTeam>();
+  for (const team of teams) {
+    byId.set(team.id, team);
+    const external = String(team.team.id ?? "").trim();
+    if (external) byExternal.set(external, team);
+  }
+  return { byId, byExternal };
+}
+
+function resolveTeamId(
+  rawId: string,
+  byId: Map<string, SoccerTeam>,
+  byExternal: Map<string, SoccerTeam>,
+): string {
+  if (!rawId) return rawId;
+  if (byId.has(rawId)) return rawId;
+  return byExternal.get(rawId)?.id ?? rawId;
+}
 
 function splitFixtureDate(iso: string | null | undefined) {
   if (!iso) return { date: "", time: "" };
@@ -76,25 +99,35 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
     queryKey: ["admin", "soccer", "participants", seasonId],
     queryFn: () => listParticipants(seasonId),
   });
+
+  const participantIds = useMemo(
+    () =>
+      [...new Set((participantsQuery.data?.data ?? []).map((p) => p.team_id))],
+    [participantsQuery.data],
+  );
+
   const teamsQuery = useQuery({
-    queryKey: ["admin", "soccer", "teams"],
-    queryFn: () => listAdminTeams(),
+    queryKey: ["admin", "soccer", "teams-by-ids", seasonId, participantIds],
+    queryFn: () => listTeamsByIds(participantIds),
+    enabled: participantIds.length > 0,
   });
 
-  const teamsById = useMemo(() => {
-    const map = new Map<string, SoccerTeam>();
-    for (const team of teamsQuery.data?.data ?? []) map.set(team.id, team);
-    return map;
-  }, [teamsQuery.data]);
+  const { byId: teamsById, byExternal } = useMemo(
+    () => buildTeamLookups(teamsQuery.data?.data ?? []),
+    [teamsQuery.data],
+  );
 
   const participantTeams = useMemo(() => {
-    const ids = new Set(
-      (participantsQuery.data?.data ?? []).map((p) => p.team_id),
-    );
-    const all = teamsQuery.data?.data ?? [];
-    if (ids.size === 0) return all.filter((t) => (t.status ?? "active") === "active");
-    return all.filter((t) => ids.has(t.id));
-  }, [participantsQuery.data, teamsQuery.data]);
+    const seen = new Set<string>();
+    const rows: SoccerTeam[] = [];
+    for (const id of participantIds) {
+      const team = teamsById.get(id);
+      if (!team || seen.has(team.id)) continue;
+      seen.add(team.id);
+      rows.push(team);
+    }
+    return rows;
+  }, [participantIds, teamsById]);
 
   useEffect(() => {
     const rounds = roundsQuery.data?.data ?? [];
@@ -106,8 +139,10 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
       return {
         key: m.id,
         id: m.id,
-        home_team_id: m.home_team_id,
-        away_team_id: m.away_team_id,
+        home_team_id: resolveTeamId(m.home_team_id, teamsById, byExternal),
+        away_team_id: resolveTeamId(m.away_team_id, teamsById, byExternal),
+        home_label: m.teams?.home?.name ?? m.home_team_id,
+        away_label: m.teams?.away?.name ?? m.away_team_id,
         date,
         time,
         status: m.bo_status ?? "scheduled",
@@ -119,7 +154,7 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
     });
     setRows(next);
     setBaseline(JSON.stringify(next));
-  }, [matchesQuery.data, roundsQuery.data]);
+  }, [matchesQuery.data, roundsQuery.data, teamsById, byExternal]);
 
   const dirty = JSON.stringify(rows) !== baseline;
   useDirtyGuard(dirty);
@@ -186,6 +221,14 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
 
   if (matchesQuery.isLoading || roundsQuery.isLoading) {
     return <LoadingBlock label="Cargando partidos…" />;
+  }
+
+  if (matchesQuery.isError) {
+    return (
+      <div className="rounded-xl border border-[#f1dfa9] bg-[#fff9e8] px-3.5 py-3 text-[13px] text-[#7d5a00]">
+        {(matchesQuery.error as Error).message}
+      </div>
+    );
   }
 
   const currentRound = roundsQuery.data?.data.find((r) => r.id === roundFilter);
@@ -279,8 +322,13 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
                         updateRow(row.key, { home_team_id: e.target.value })
                       }
                     >
+                      {!teamsById.has(row.home_team_id) && row.home_team_id ? (
+                        <option value={row.home_team_id}>
+                          {home ? teamDisplayName(home) : row.home_label}
+                        </option>
+                      ) : null}
                       {participantTeams.map((team) => (
-                        <option key={team.id} value={team.id}>
+                        <option key={`h-${row.key}-${team.id}`} value={team.id}>
                           {teamDisplayName(team)}
                         </option>
                       ))}
@@ -317,8 +365,13 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
                         updateRow(row.key, { away_team_id: e.target.value })
                       }
                     >
+                      {!teamsById.has(row.away_team_id) && row.away_team_id ? (
+                        <option value={row.away_team_id}>
+                          {away ? teamDisplayName(away) : row.away_label}
+                        </option>
+                      ) : null}
                       {participantTeams.map((team) => (
-                        <option key={team.id} value={team.id}>
+                        <option key={`a-${row.key}-${team.id}`} value={team.id}>
                           {teamDisplayName(team)}
                         </option>
                       ))}

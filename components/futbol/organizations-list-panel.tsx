@@ -8,7 +8,10 @@ import {
 import { Note } from "@/components/ui/note";
 import { LoadingBlock } from "@/components/ui/spinner";
 import { listOrganizationsForSeasonYear } from "@/lib/api/admin-soccer";
-import { soccerOrgCompetitionsHref } from "@/lib/api/soccer-structure";
+import {
+  isDefaultOrganizationId,
+  soccerOrgCompetitionsHref,
+} from "@/lib/api/soccer-structure";
 
 export function OrganizationsListPanel({ year }: { year: number }) {
   const orgsQuery = useQuery({
@@ -38,8 +41,9 @@ export function OrganizationsListPanel({ year }: { year: number }) {
             No hay organizaciones deportivas
           </p>
           <p className="mt-2 text-[14px] text-dx-muted">
-            La API sí soporta organizaciones (`/organizations`). Crea la primera
-            en Datos maestros · Fútbol · Equipos (por país).
+            Crea organizaciones en Datos maestros · Fútbol · Organizaciones.
+            También verás el bucket «Sin organización deportiva» para
+            competiciones huérfanas.
           </p>
         </div>
         <Note className="mt-5">
@@ -57,15 +61,25 @@ export function OrganizationsListPanel({ year }: { year: number }) {
             key={org.id}
             href={soccerOrgCompetitionsHref(year, org.id)}
             name={org.name}
-            code={org.country_name ?? org.country_id}
+            code={
+              isDefaultOrganizationId(org.id)
+                ? org.leagues.length > 0
+                  ? `${org.leagues.length} sin asignar`
+                  : "Huérfanas"
+                : (org.country_name ?? org.country_id)
+            }
             imageUrl={org.logo}
-            mediaLabel={org.name.slice(0, 2).toUpperCase()}
+            mediaLabel={
+              isDefaultOrganizationId(org.id)
+                ? String(org.leagues.length || "—")
+                : org.name.slice(0, 2).toUpperCase()
+            }
           />
         ))}
       </CountryCardsGrid>
       <Note className="mt-5">
-        Flujo: Temporada → Organización → Competición → Partidos. El país de
-        cada organización se muestra bajo el nombre.
+        «Sin organización deportiva» agrupa competiciones sin org asignada para
+        que puedas asociarlas. El resto muestra el país de cada organización.
       </Note>
     </>
   );

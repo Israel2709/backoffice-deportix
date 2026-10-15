@@ -10,7 +10,10 @@ import {
   soccerOrgRecentKey,
 } from "@/components/futbol/recent-keys";
 import { getAdminOrganization } from "@/lib/api/admin-soccer";
-import { soccerOrgCompetitionsHref } from "@/lib/api/soccer-structure";
+import {
+  isDefaultOrganizationId,
+  soccerOrgCompetitionsHref,
+} from "@/lib/api/soccer-structure";
 import { PageHeader } from "@/components/ui/page";
 import { Hero } from "@/components/ui/hero";
 import { RecentlyVisited } from "@/components/ui/recently-visited";
@@ -36,6 +39,7 @@ export default function OperacionFutbolOrgCompetitionsPage({
     queryFn: () => getAdminOrganization(orgId),
   });
 
+  const isUnassigned = isDefaultOrganizationId(orgId);
   const orgName = orgQuery.data?.data.name ?? "Organización";
   const countryLabel =
     orgQuery.data?.data.country_name?.trim() ||
@@ -74,14 +78,16 @@ export default function OperacionFutbolOrgCompetitionsPage({
       >
         <Hero
           eyebrow="Operación · Fútbol"
-          title="Competiciones"
+          title={isUnassigned ? "Sin organización deportiva" : "Competiciones"}
           description={
-            countryLabel
-              ? `${orgName} · ${countryLabel} · temporada ${yearLabel}`
-              : `Competiciones de ${orgName} en la temporada ${yearLabel}.`
+            isUnassigned
+              ? `Competiciones de ${yearLabel} sin organización. Asígnales una para sacarlas de este bucket.`
+              : countryLabel
+                ? `${orgName} · ${countryLabel} · temporada ${yearLabel}`
+                : `Competiciones de ${orgName} en la temporada ${yearLabel}.`
           }
           actions={
-            Number.isFinite(year) ? (
+            Number.isFinite(year) && !isUnassigned ? (
               <Link
                 href={`${compsHref}/nueva`}
                 className="inline-flex items-center gap-2 rounded-[10px] bg-dx-blue px-[15px] py-[11px] text-sm font-bold !text-white hover:bg-dx-blue2"

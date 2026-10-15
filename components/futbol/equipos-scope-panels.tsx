@@ -126,6 +126,7 @@ export function EquiposOrganizationScreen({ countryId }: { countryId: string }) 
     useCountryOrganizations(countryId);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
+  const [abbreviation, setAbbreviation] = useState("");
   const [logo, setLogo] = useState("");
   const [logoAlt, setLogoAlt] = useState("");
   const countryName = country?.name ?? "País";
@@ -137,6 +138,7 @@ export function EquiposOrganizationScreen({ countryId }: { countryId: string }) 
       }
       return createOrganization({
         name,
+        abbreviation: abbreviation.trim() || null,
         countryName: country.name,
         logo,
         logo_alt: logoAlt.trim() || null,
@@ -146,6 +148,7 @@ export function EquiposOrganizationScreen({ countryId }: { countryId: string }) 
       toast.success("Organización creada");
       setCreating(false);
       setName("");
+      setAbbreviation("");
       setLogo("");
       setLogoAlt("");
       void queryClient.invalidateQueries({
@@ -201,6 +204,13 @@ export function EquiposOrganizationScreen({ countryId }: { countryId: string }) 
                 placeholder="Federación Mexicana de Fútbol"
               />
             </Field>
+            <Field label="Siglas">
+              <TextInput
+                value={abbreviation}
+                onChange={(e) => setAbbreviation(e.target.value)}
+                placeholder="FMF"
+              />
+            </Field>
             <LogoUrlOrFileField
               label="Logo"
               value={logo}
@@ -220,6 +230,7 @@ export function EquiposOrganizationScreen({ countryId }: { countryId: string }) 
               onClick={() => {
                 setCreating(false);
                 setName("");
+                setAbbreviation("");
                 setLogo("");
                 setLogoAlt("");
               }}
@@ -241,9 +252,11 @@ export function EquiposOrganizationScreen({ countryId }: { countryId: string }) 
           id: org.id,
           href: equiposHref(country?.id ?? countryId, org.id),
           title: org.name,
-          meta: leagueNamesMeta(org.leagues),
+          meta: [org.abbreviation, leagueNamesMeta(org.leagues)]
+            .filter(Boolean)
+            .join(" · "),
           imageUrl: org.logo,
-          fallback: org.name,
+          fallback: org.abbreviation || org.name,
         }))}
         searchPlaceholder="Buscar organización…"
         emptyLabel={

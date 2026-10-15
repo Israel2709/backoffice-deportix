@@ -5,12 +5,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
-  listAdminTeams,
   listParticipants,
   listStandings,
+  listTeamsByIds,
   replaceStandings,
 } from "@/lib/api/admin-soccer";
-import { teamDisplayName, type SoccerTeam } from "@/lib/api/soccer-types";
+import {
+  teamDisplayName,
+  teamLogoUrl,
+  type SoccerTeam,
+} from "@/lib/api/soccer-types";
 import { useDirtyGuard } from "@/hooks/use-dirty-guard";
 import { Button } from "@/components/ui/button";
 import { Note } from "@/components/ui/note";
@@ -19,6 +23,8 @@ import { cn } from "@/lib/utils";
 
 type StandingRow = {
   team_id: string;
+  team_name?: string | null;
+  team_logo?: string | null;
   rank: number;
   played: number;
   goals_for: number;
@@ -42,14 +48,29 @@ export function SeasonStandingsPanel({ seasonId }: { seasonId: string }) {
     queryKey: ["admin", "soccer", "participants", seasonId],
     queryFn: () => listParticipants(seasonId),
   });
+
+  const teamIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const p of participantsQuery.data?.data ?? []) ids.add(p.team_id);
+    for (const s of standingsQuery.data?.data ?? []) {
+      if (s.team_id) ids.add(s.team_id);
+    }
+    return [...ids];
+  }, [participantsQuery.data, standingsQuery.data]);
+
   const teamsQuery = useQuery({
-    queryKey: ["admin", "soccer", "teams"],
-    queryFn: () => listAdminTeams(),
+    queryKey: ["admin", "soccer", "teams-by-ids", seasonId, teamIds],
+    queryFn: () => listTeamsByIds(teamIds),
+    enabled: teamIds.length > 0,
   });
 
   const teamsById = useMemo(() => {
     const map = new Map<string, SoccerTeam>();
-    for (const team of teamsQuery.data?.data ?? []) map.set(team.id, team);
+    for (const team of teamsQuery.data?.data ?? []) {
+      map.set(team.id, team);
+      const external = String(team.team.id ?? "").trim();
+      if (external) map.set(external, team);
+    }
     return map;
   }, [teamsQuery.data]);
 
@@ -58,6 +79,8 @@ export function SeasonStandingsPanel({ seasonId }: { seasonId: string }) {
     if (standings.length > 0) {
       const next = standings.map((s, index) => ({
         team_id: s.team_id,
+        team_name: s.team_name ?? null,
+        team_logo: s.team_logo ?? null,
         rank: s.rank ?? index + 1,
         played: s.played ?? 0,
         goals_for: s.goals_for ?? 0,
@@ -73,6 +96,8 @@ export function SeasonStandingsPanel({ seasonId }: { seasonId: string }) {
     if (participants.length === 0) return;
     const next = participants.map((p, index) => ({
       team_id: p.team_id,
+      team_name: null as string | null,
+      team_logo: null as string | null,
       rank: index + 1,
       played: 0,
       goals_for: 0,
@@ -171,6 +196,14 @@ export function SeasonStandingsPanel({ seasonId }: { seasonId: string }) {
           <tbody>
             {rows.map((row) => {
               const team = teamsById.get(row.team_id);
+              const name =
+                (team ? teamDisplayName(team) : null) ||
+                row.team_name?.trim() ||
+                null;
+              const logo =
+                (team ? teamLogoUrl(team) : null) ||
+                row.team_logo?.trim() ||
+                null;
               const dg = row.goals_for - row.goals_against;
               return (
                 <tr key={row.team_id}>
@@ -187,12 +220,19 @@ export function SeasonStandingsPanel({ seasonId }: { seasonId: string }) {
                   </td>
                   <td className="border-b border-dx-line px-3 py-2">
                     <div className="flex items-center gap-2">
-                      <span className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-lg border border-[#cad9f0] bg-[#edf4ff] text-[10px] font-black text-dx-blue">
-                        {team?.team.code?.slice(0, 3) ?? "EQ"}
-                      </span>
-                      <strong>
-                        {team ? teamDisplayName(team) : row.team_id}
-                      </strong>
+                      {logo ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={logo}
+                          alt=""
+                          className="h-[30px] w-[30px] rounded-lg border border-[#cad9f0] bg-white object-contain p-0.5"
+                        />
+                      ) : (
+                        <span className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-lg border border-[#cad9f0] bg-[#edf4ff] text-[10px] font-black text-dx-blue">
+                          {team?.team.code?.slice(0, 3) ?? "EQ"}
+                        </span>
+                      )}
+                      <strong>{name ?? row.team_id}</strong>
                     </div>
                   </td>
                   <td className="border-b border-dx-line px-3 py-2 text-center">

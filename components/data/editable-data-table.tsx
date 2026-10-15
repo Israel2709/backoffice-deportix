@@ -164,11 +164,13 @@ export function EditableDataTable<T extends { id: string }>({
     [baseline],
   );
 
+  /** Plain-text value for filter/sort — ReactNode formats fall back to raw. */
   function displayValue(row: T, columnId: string): string {
     const raw = ownString(draft[row.id] ?? {}, columnId);
     const column = columns.find((col) => col.id === columnId);
     if (!raw) return "";
-    return column?.format?.(raw, row) ?? raw;
+    const formatted = column?.format?.(raw, row);
+    return typeof formatted === "string" ? formatted : raw;
   }
 
   const filteredSorted = useMemo(() => {

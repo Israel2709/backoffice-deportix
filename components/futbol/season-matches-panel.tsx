@@ -200,17 +200,21 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
 
   function addMatch() {
     const firstRound = roundsQuery.data?.data[0];
-    const home = participantTeams[0]?.id ?? "";
-    const away = participantTeams[1]?.id ?? "";
+    const homeTeam = participantTeams[0];
+    const awayTeam = participantTeams[1];
+    const home = homeTeam?.id ?? "";
+    const away = awayTeam?.id ?? "";
     setRows((prev) => [
       ...prev,
       {
         key: `new-${Date.now()}`,
         home_team_id: home,
         away_team_id: away,
+        home_label: homeTeam ? teamDisplayName(homeTeam) : home,
+        away_label: awayTeam ? teamDisplayName(awayTeam) : away,
         date: "",
         time: "",
-        status: "scheduled",
+        status: "scheduled" as MatchBoStatus,
         goals_home: "",
         goals_away: "",
         round_id: firstRound?.id ?? "",

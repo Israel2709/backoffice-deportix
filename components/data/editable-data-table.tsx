@@ -2,7 +2,7 @@
 
 import { ArrowDown, ArrowRight, ArrowUp, ArrowUpDown, Pencil, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   FilteredSelect,
   type FilteredSelectOption,
@@ -22,7 +22,7 @@ export type EditableColumn<T> = {
   placeholder?: string;
   className?: string;
   /** Optional display formatter (edit still uses raw string value). */
-  format?: (value: string, row: T) => string;
+  format?: (value: string, row: T) => ReactNode;
   /** Cell editor type. Defaults to text input. */
   editAs?: "text" | "select" | "date" | "time";
   /** Options for select editors (static or per-row). */

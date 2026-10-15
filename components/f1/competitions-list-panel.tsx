@@ -4,33 +4,51 @@ import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { toast } from "sonner";
-import { EditableDataTable } from "@/components/data/editable-data-table";
+import {
+  EditableDataTable,
+  type EditableColumn,
+} from "@/components/data/editable-data-table";
 import { Note } from "@/components/ui/note";
 import { LoadingBlock } from "@/components/ui/spinner";
+import { StatusBadge } from "@/components/ui/status-badge";
 import {
   deleteCompetition,
   listAdminCompetitions,
   listAdminRacesBySeason,
+  updateF1CompetitionDocument,
 } from "@/lib/api/admin-f1";
+import { F1_COMPETITION_STATUS_LABEL } from "@/lib/api/f1-competition";
 import { unlinkCompetitionFromCountry } from "@/lib/f1-competition-countries";
 import { sortCompetitionsBySchedule } from "@/lib/f1-competition-schedule";
-import { seasonIdFor, type F1Competition } from "@/lib/api/f1-types";
+import {
+  seasonIdFor,
+  type F1Competition,
+  type F1CompetitionStatus,
+} from "@/lib/api/f1-types";
 
-const columns = [
-  { id: "name", header: "Nombre" },
-  {
-    id: "location",
-    header: "País",
-    filterable: false,
-    sortable: false,
-  },
-  {
-    id: "scope",
-    header: "Alcance",
-    filterable: false,
-    sortable: false,
-  },
-];
+const STATUS_OPTIONS = (
+  Object.entries(F1_COMPETITION_STATUS_LABEL) as Array<
+    [F1CompetitionStatus, string]
+  >
+).map(([value, label]) => ({ value, label }));
+
+const STATUS_VALUES = new Set<string>(STATUS_OPTIONS.map((o) => o.value));
+
+function competitionStatusTone(status?: F1CompetitionStatus | null) {
+  if (status === "active") return "green" as const;
+  if (status === "scheduled") return "amber" as const;
+  if (status === "cancelled") return "red" as const;
+  return "gray" as const;
+}
+
+function competitionStatusLabel(status?: F1CompetitionStatus | null) {
+  if (!status) return "—";
+  return F1_COMPETITION_STATUS_LABEL[status] ?? status;
+}
+
+function asCompetitionStatus(value: string): F1CompetitionStatus | null {
+  return STATUS_VALUES.has(value) ? (value as F1CompetitionStatus) : null;
+}
 
 export function CompetitionsListPanel({ year }: { year: number }) {
   const queryClient = useQueryClient();
@@ -53,6 +71,43 @@ export function CompetitionsListPanel({ year }: { year: number }) {
     return sortCompetitionsBySchedule(competitions, races);
   }, [competitionsQuery.data?.data, racesQuery.data?.data]);
 
+  const columns = useMemo<EditableColumn<F1Competition>[]>(
+    () => [
+      { id: "name", header: "Nombre", editable: false },
+      {
+        id: "location",
+        header: "País",
+        filterable: false,
+        sortable: false,
+        editable: false,
+      },
+      {
+        id: "status",
+        header: "Estado",
+        className: "w-[160px]",
+        editAs: "select",
+        placeholder: "Estado…",
+        options: STATUS_OPTIONS,
+        format: (value) => {
+          const status = asCompetitionStatus(value);
+          return (
+            <StatusBadge tone={competitionStatusTone(status)}>
+              {competitionStatusLabel(status)}
+            </StatusBadge>
+          );
+        },
+      },
+      {
+        id: "scope",
+        header: "Alcance",
+        filterable: false,
+        sortable: false,
+        editable: false,
+      },
+    ],
+    [],
+  );
+
   const nuevaHref = `/operacion/formula-1/temporada/${year}/nueva`;
 
   const deleteMutation = useMutation({
@@ -69,11 +124,33 @@ export function CompetitionsListPanel({ year }: { year: number }) {
     onSettled: () => setDeletingId(null),
   });
 
+  const saveMutation = useMutation({
+    mutationFn: async (
+      changes: Array<{ id: string; values: Record<string, string> }>,
+    ) => {
+      for (const change of changes) {
+        const status = asCompetitionStatus(change.values.status ?? "");
+        if (!status) {
+          throw new Error("Selecciona un estado válido para cada fila editada.");
+        }
+        await updateF1CompetitionDocument(change.id, { status });
+      }
+    },
+    onSuccess: () => {
+      toast.success("Estado actualizado");
+      void queryClient.invalidateQueries({
+        queryKey: ["admin", "f1", "competitions"],
+      });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
   const getValues = useCallback(
     (row: F1Competition) => {
       return {
         name: row.name ?? "",
         location: row.location?.trim() || "—",
+        status: row.status ?? "scheduled",
         scope: `Temporada ${year} · Calendario · Clasificaciones`,
       };
     },
@@ -123,6 +200,8 @@ export function CompetitionsListPanel({ year }: { year: number }) {
         columns={columns}
         rows={rows}
         getValues={getValues}
+        onSave={(changes) => saveMutation.mutateAsync(changes)}
+        saving={saveMutation.isPending}
         rowHref={(row) =>
           `/operacion/formula-1/${row.id}/${encodeURIComponent(seasonIdFor(row.id, year))}`
         }

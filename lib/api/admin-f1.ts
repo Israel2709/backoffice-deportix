@@ -42,6 +42,7 @@ type BffCompetition = {
   name: string;
   location?: string | { country?: string | null; city?: string | null } | null;
   seasonId?: string | null;
+  status?: "scheduled" | "active" | "completed" | "cancelled" | null;
   branding?: { logoUrl?: string | null } | null;
 };
 type BffCircuit = {
@@ -127,6 +128,20 @@ function mapCompetitionLocation(
   return location.country?.trim() || location.city?.trim() || null;
 }
 
+function mapCompetitionStatus(
+  status: BffCompetition["status"],
+): F1Competition["status"] {
+  if (
+    status === "scheduled" ||
+    status === "active" ||
+    status === "completed" ||
+    status === "cancelled"
+  ) {
+    return status;
+  }
+  return null;
+}
+
 function mapCompetition(c: BffCompetition): F1Competition {
   return {
     id: String(c.id),
@@ -134,6 +149,7 @@ function mapCompetition(c: BffCompetition): F1Competition {
     logo: c.branding?.logoUrl ?? null,
     location: mapCompetitionLocation(c.location),
     seasonId: c.seasonId ?? null,
+    status: mapCompetitionStatus(c.status),
     sport_id: "formula-1",
   };
 }
@@ -295,7 +311,7 @@ export async function createF1CompetitionDocument(
 
 export async function updateF1CompetitionDocument(
   id: string,
-  body: F1CompetitionWriteBody,
+  body: Partial<F1CompetitionWriteBody> | F1CompetitionWriteBody,
 ): One<F1Competition> {
   const response = await bffRequest<BffCompetition[] | BffCompetition>(
     `${PREFIX}/competitions?id=${encodeURIComponent(id)}`,

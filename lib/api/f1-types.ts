@@ -25,6 +25,12 @@ export type F1SessionBoStatus =
 
 export type F1ResultStatus = "classified" | "dnf" | "dns" | "dsq";
 
+export type F1CompetitionStatus =
+  | "scheduled"
+  | "active"
+  | "completed"
+  | "cancelled";
+
 export interface F1Competition {
   id: string;
   name: string;
@@ -33,6 +39,8 @@ export interface F1Competition {
   location?: string | null;
   /** Season year (or season document id) this competition belongs to. */
   seasonId?: string | null;
+  /** Competition lifecycle status from BFF (`scheduled` | `active` | …). */
+  status?: F1CompetitionStatus | null;
   sport_id?: string;
 }
 

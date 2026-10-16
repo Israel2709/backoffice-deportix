@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { LoadingBlock } from "@/components/ui/spinner";
 import { Field, TextInput, TextSelect } from "@/components/capture/field";
+import { formatDateDisplay } from "@/lib/format-date";
 
 function statusTone(status?: SeasonStatus) {
   if (status === "current") return "green" as const;
@@ -103,13 +104,8 @@ export function SeasonsListPanel({ leagueId }: { leagueId: string }) {
             <div>
               <div className="font-bold">{seasonLabel(season)}</div>
               <div className="mt-1 text-[13px] text-dx-muted">
-                {season.start_date
-                  ? new Date(season.start_date).toLocaleDateString()
-                  : "Sin inicio"}{" "}
-                →{" "}
-                {season.end_date
-                  ? new Date(season.end_date).toLocaleDateString()
-                  : "Sin fin"}
+                {formatDateDisplay(season.start_date, "Sin inicio")} →{" "}
+                {formatDateDisplay(season.end_date, "Sin fin")}
               </div>
             </div>
             <div className="flex items-center gap-3">

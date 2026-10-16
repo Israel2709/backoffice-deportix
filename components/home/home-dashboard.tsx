@@ -17,6 +17,7 @@ import { KpiGrid } from "@/components/ui/kpi-grid";
 import { Note } from "@/components/ui/note";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Spinner } from "@/components/ui/spinner";
+import { formatDateTimeDisplay } from "@/lib/format-date";
 
 const SYNC_SPORTS: { id: SyncSport; label: string }[] = [
   { id: "soccer", label: "Fútbol" },
@@ -228,7 +229,7 @@ export function HomeDashboard() {
                         </StatusBadge>
                       </td>
                       <td className="px-3.5 py-3 text-dx-muted">
-                        {new Date(job.started_at).toLocaleString()}
+                        {formatDateTimeDisplay(job.started_at)}
                       </td>
                     </tr>
                   ))}

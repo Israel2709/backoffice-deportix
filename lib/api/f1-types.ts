@@ -93,6 +93,17 @@ export interface F1SeasonParticipant {
   role?: "race-driver" | "reserve-driver";
 }
 
+/** Lean podium snapshot embedded on each race (ingest / BO). */
+export interface F1RaceHighlightsIds {
+  p1_driver_id: string;
+  p2_driver_id: string;
+  p3_driver_id: string;
+  pole_driver_id: string;
+  fastest_driver_id: string;
+  winning_team_id: string;
+  updated_at?: string | null;
+}
+
 export interface F1Race {
   id: string;
   competition_id: string;
@@ -102,6 +113,7 @@ export interface F1Race {
   name?: string | null;
   status: string;
   type?: string | null;
+  highlights?: F1RaceHighlightsIds | null;
 }
 
 /** Sessions are not a BFF resource — stubs return empty / no-op. */

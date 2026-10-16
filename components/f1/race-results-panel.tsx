@@ -18,6 +18,7 @@ import { FilteredSelect } from "@/components/capture/filtered-select";
 import { Field } from "@/components/capture/field";
 import { Button } from "@/components/ui/button";
 import { Note } from "@/components/ui/note";
+import { formatDateDisplay } from "@/lib/format-date";
 
 type HighlightsForm = {
   p1_driver_id: string;
@@ -108,7 +109,12 @@ export function RaceResultsPanel({
     }));
   }, [participants, teamsQuery.data]);
 
-  const isSprint = raceQuery.data?.data.type === "Sprint";
+  const raceType = (raceQuery.data?.data.type ?? "").trim().toLowerCase();
+  const isSprint =
+    raceType === "sprint" ||
+    (raceType.includes("sprint shootout") &&
+      !raceType.startsWith("1st") &&
+      !raceType.startsWith("2nd"));
 
   useEffect(() => {
     const h = highlightsQuery.data;
@@ -148,7 +154,13 @@ export function RaceResultsPanel({
       toast.success("Resultados guardados");
       setBaseline(JSON.stringify(form));
       void queryClient.invalidateQueries({
+        queryKey: ["admin", "f1", "race", raceId],
+      });
+      void queryClient.invalidateQueries({
         queryKey: ["admin", "f1", "race-highlights", raceId],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["admin", "f1", "races"],
       });
       void queryClient.invalidateQueries({
         queryKey: ["admin", "f1", "race-results", raceId],
@@ -197,9 +209,7 @@ export function RaceResultsPanel({
             {race?.name?.trim() || "Resultados de carrera"}
           </h2>
           <p className="text-sm text-dx-muted">
-            {race?.race_date
-              ? new Date(race.race_date).toLocaleDateString()
-              : "Sin fecha"}
+            {formatDateDisplay(race?.race_date, "Sin fecha")}
           </p>
         </div>
       ) : (

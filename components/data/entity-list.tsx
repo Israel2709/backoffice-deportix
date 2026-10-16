@@ -14,6 +14,7 @@ import {
   getSoccerTeams,
 } from "@/lib/api/public";
 import type { NamedEntity } from "@/lib/api/types";
+import { formatDateDisplay } from "@/lib/format-date";
 import { ListRow } from "@/components/ui/page";
 import { StatusBadge } from "@/components/ui/status-badge";
 
@@ -117,12 +118,13 @@ const SOURCES: Record<
     getTitle: (item) =>
       String(item.name ?? item.competition_name ?? "Sin nombre"),
     getMeta: (item) => {
-      const date =
+      const rawDate =
         typeof item.date === "string"
           ? item.date
           : typeof item.start_date === "string"
             ? item.start_date
             : undefined;
+      const date = rawDate ? formatDateDisplay(rawDate, "") : undefined;
       const status =
         typeof item.status === "string" ? item.status : undefined;
       return [date, status].filter(Boolean).join(" · ") || undefined;

@@ -58,6 +58,16 @@ type BffDriver = {
   number?: number | null;
   team?: { id: string; name: string; logo?: string | null } | null;
 };
+type BffRaceHighlights = {
+  p1DriverId?: string | null;
+  p2DriverId?: string | null;
+  p3DriverId?: string | null;
+  poleDriverId?: string | null;
+  fastestDriverId?: string | null;
+  winningTeamId?: string | null;
+  updatedAt?: string | null;
+};
+
 type BffRace = {
   id: string;
   competition: { id: string; name: string };
@@ -66,6 +76,7 @@ type BffRace = {
   type: string;
   date: string;
   status: string;
+  highlights?: BffRaceHighlights | null;
 };
 type BffDriverRanking = {
   id: string;
@@ -183,6 +194,21 @@ function mapDriver(d: BffDriver): F1Driver {
   };
 }
 
+function mapRaceHighlights(
+  raw: BffRaceHighlights | null | undefined,
+): F1Race["highlights"] {
+  if (!raw) return null;
+  return {
+    p1_driver_id: raw.p1DriverId?.trim() || "",
+    p2_driver_id: raw.p2DriverId?.trim() || "",
+    p3_driver_id: raw.p3DriverId?.trim() || "",
+    pole_driver_id: raw.poleDriverId?.trim() || "",
+    fastest_driver_id: raw.fastestDriverId?.trim() || "",
+    winning_team_id: raw.winningTeamId?.trim() || "",
+    updated_at: raw.updatedAt ?? null,
+  };
+}
+
 function mapRace(r: BffRace): F1Race {
   return {
     id: String(r.id),
@@ -193,6 +219,7 @@ function mapRace(r: BffRace): F1Race {
     name: r.competition?.name ?? null,
     status: r.status,
     type: r.type ?? null,
+    highlights: mapRaceHighlights(r.highlights),
   };
 }
 
@@ -907,6 +934,114 @@ export type TeamRankingWrite = {
   podiums: number;
 };
 
+function mapDriverRanking(r: BffDriverRanking): F1DriverRanking {
+  return {
+    id: String(r.id),
+    competition_id: r.competitionId ?? null,
+    driver_id: String(r.driver.id),
+    season: r.season,
+    points: r.points ?? 0,
+    position: r.position,
+    wins: r.wins ?? 0,
+    podiums: r.podiums ?? 0,
+  };
+}
+
+function mapTeamRanking(r: BffTeamRanking): F1TeamRanking {
+  return {
+    id: String(r.id),
+    competition_id: r.competitionId ?? null,
+    team_id: String(r.team.id),
+    season: r.season,
+    points: r.points ?? 0,
+    position: r.position,
+    wins: r.wins ?? 0,
+    podiums: r.podiums ?? 0,
+  };
+}
+
+/** Championship rankings for a season year (no competition filter). */
+export async function listSeasonDriverRankings(
+  year: number,
+): List<F1DriverRanking> {
+  const response = await bffRequest<BffDriverRanking[]>(
+    `${PREFIX}/rankings/drivers?season=${year}`,
+  );
+  return { data: asList(response).map(mapDriverRanking) };
+}
+
+/** Championship rankings for a season year (no competition filter). */
+export async function listSeasonTeamRankings(
+  year: number,
+): List<F1TeamRanking> {
+  const response = await bffRequest<BffTeamRanking[]>(
+    `${PREFIX}/rankings/teams?season=${year}`,
+  );
+  return { data: asList(response).map(mapTeamRanking) };
+}
+
+export async function replaceSeasonDriverRankings(
+  year: number,
+  rankings: DriverRankingWrite[],
+): List<F1DriverRanking> {
+  for (const row of rankings) {
+    const body = {
+      driverId: row.driver_id,
+      season: year,
+      position: row.position,
+      points: row.points,
+      wins: row.wins,
+      podiums: row.podiums,
+    };
+    if (row.id) {
+      await bffRequest(
+        `${PREFIX}/rankings/drivers?id=${encodeURIComponent(row.id)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        },
+      );
+    } else {
+      await bffRequest(`${PREFIX}/rankings/drivers`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    }
+  }
+  return listSeasonDriverRankings(year);
+}
+
+export async function replaceSeasonTeamRankings(
+  year: number,
+  rankings: TeamRankingWrite[],
+): List<F1TeamRanking> {
+  for (const row of rankings) {
+    const body = {
+      teamId: row.team_id,
+      season: year,
+      position: row.position,
+      points: row.points,
+      wins: row.wins,
+      podiums: row.podiums,
+    };
+    if (row.id) {
+      await bffRequest(
+        `${PREFIX}/rankings/teams?id=${encodeURIComponent(row.id)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        },
+      );
+    } else {
+      await bffRequest(`${PREFIX}/rankings/teams`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    }
+  }
+  return listSeasonTeamRankings(year);
+}
+
 export async function listDriverRankings(
   seasonId: string,
 ): List<F1DriverRanking> {
@@ -914,18 +1049,7 @@ export async function listDriverRankings(
   const response = await bffRequest<BffDriverRanking[]>(
     `${PREFIX}/rankings/drivers?season=${year}&competition=${encodeURIComponent(competitionId)}`,
   );
-  return {
-    data: asList(response).map((r) => ({
-      id: String(r.id),
-      competition_id: r.competitionId ?? null,
-      driver_id: String(r.driver.id),
-      season: r.season,
-      points: r.points ?? 0,
-      position: r.position,
-      wins: r.wins ?? 0,
-      podiums: r.podiums ?? 0,
-    })),
-  };
+  return { data: asList(response).map(mapDriverRanking) };
 }
 
 export async function replaceDriverRankings(
@@ -968,18 +1092,7 @@ export async function listTeamRankings(seasonId: string): List<F1TeamRanking> {
   const response = await bffRequest<BffTeamRanking[]>(
     `${PREFIX}/rankings/teams?season=${year}&competition=${encodeURIComponent(competitionId)}`,
   );
-  return {
-    data: asList(response).map((r) => ({
-      id: String(r.id),
-      competition_id: r.competitionId ?? null,
-      team_id: String(r.team.id),
-      season: r.season,
-      points: r.points ?? 0,
-      position: r.position,
-      wins: r.wins ?? 0,
-      podiums: r.podiums ?? 0,
-    })),
-  };
+  return { data: asList(response).map(mapTeamRanking) };
 }
 
 export async function replaceTeamRankings(
@@ -1137,9 +1250,45 @@ function driverLabel(entry?: {
   return entry.driver_name?.trim() || entry.driver_id || "—";
 }
 
+function highlightsFromRace(race: F1Race): F1RaceHighlights | null {
+  const h = race.highlights;
+  if (!h) return null;
+  const hasAny =
+    h.p1_driver_id ||
+    h.p2_driver_id ||
+    h.p3_driver_id ||
+    h.pole_driver_id ||
+    h.fastest_driver_id ||
+    h.winning_team_id;
+  if (!hasAny) return null;
+  return {
+    race_id: race.id,
+    p1: h.p1_driver_id || "—",
+    p2: h.p2_driver_id || "—",
+    p3: h.p3_driver_id || "—",
+    fastest_lap: h.fastest_driver_id || "—",
+    race_pole: h.pole_driver_id || "—",
+    winning_team: h.winning_team_id || "—",
+    sprint_pole: h.pole_driver_id || "—",
+    sprint_winner: h.p1_driver_id || "—",
+    sprint_winning_team: h.winning_team_id || "—",
+    p1_driver_id: h.p1_driver_id,
+    p2_driver_id: h.p2_driver_id,
+    p3_driver_id: h.p3_driver_id,
+    pole_driver_id: h.pole_driver_id,
+    fastest_driver_id: h.fastest_driver_id,
+    winning_team_id: h.winning_team_id,
+  };
+}
+
 export async function getRaceHighlights(
   raceId: string,
 ): Promise<F1RaceHighlights> {
+  const race = await getRace(raceId);
+  const fromRace = highlightsFromRace(race.data);
+  if (fromRace) return fromRace;
+
+  // Fallback for races not yet backfilled with embedded highlights.
   const [results, grid, fastest] = await Promise.all([
     listRaceResults(raceId),
     listStartingGrid(raceId),
@@ -1190,6 +1339,22 @@ export async function saveRaceHighlights(
     winning_team_id?: string;
   },
 ): Promise<F1RaceHighlights> {
+  await bffRequest(`${PREFIX}/races/${encodeURIComponent(raceId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      highlights: {
+        p1DriverId: input.p1_driver_id || null,
+        p2DriverId: input.p2_driver_id || null,
+        p3DriverId: input.p3_driver_id || null,
+        poleDriverId: input.pole_driver_id || null,
+        fastestDriverId: input.fastest_driver_id || null,
+        winningTeamId: input.winning_team_id || null,
+        updatedAt: new Date().toISOString(),
+      },
+    }),
+  });
+
+  // Keep ranking collections in sync for detail views that still read them.
   const podium: Array<{
     driver_id: string;
     team_id: string;

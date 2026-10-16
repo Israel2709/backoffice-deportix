@@ -151,7 +151,7 @@ export function CompetitionsListPanel({ year }: { year: number }) {
         name: row.name ?? "",
         location: row.location?.trim() || "—",
         status: row.status ?? "scheduled",
-        scope: `Temporada ${year} · Calendario · Clasificaciones`,
+        scope: `Temporada ${year} · Calendario · Resultados`,
       };
     },
     [year],
@@ -188,7 +188,8 @@ export function CompetitionsListPanel({ year }: { year: number }) {
         </div>
         <Note className="mt-5">
           Flujo: Temporada → Competición → Participantes → Calendario →
-          Clasificaciones.
+          Resultados. Las clasificaciones de campeonato están en las pestañas
+          de la temporada.
         </Note>
       </>
     );
@@ -227,7 +228,8 @@ export function CompetitionsListPanel({ year }: { year: number }) {
 
       <Note className="mt-5">
         Flujo: Temporada → Competición → Participantes → Calendario →
-        Clasificaciones.
+        Resultados. Las clasificaciones de campeonato están en las pestañas de
+        la temporada.
       </Note>
     </>
   );

@@ -9,6 +9,7 @@ import {
 } from "@/components/capture/filtered-select";
 import { Button } from "@/components/ui/button";
 import { useDirtyGuard } from "@/hooks/use-dirty-guard";
+import { formatDateDisplay } from "@/lib/format-date";
 import { cn } from "@/lib/utils";
 
 export type EditableColumn<T> = {
@@ -170,7 +171,9 @@ export function EditableDataTable<T extends { id: string }>({
     const column = columns.find((col) => col.id === columnId);
     if (!raw) return "";
     const formatted = column?.format?.(raw, row);
-    return typeof formatted === "string" ? formatted : raw;
+    if (typeof formatted === "string") return formatted;
+    if (column?.editAs === "date") return formatDateDisplay(raw, "");
+    return raw;
   }
 
   const filteredSorted = useMemo(() => {
@@ -422,7 +425,12 @@ export function EditableDataTable<T extends { id: string }>({
                         (col.isCellEditable?.(row) ?? true);
                       // Locked cells always prefer format (e.g. "—") over the
                       // edit placeholder, even when the raw value is empty.
-                      const formatted = col.format?.(raw, row);
+                      // Date columns default to dd/mm/yyyy when no format is set.
+                      const formatted =
+                        col.format?.(raw, row) ??
+                        (col.editAs === "date" && raw
+                          ? formatDateDisplay(raw)
+                          : undefined);
                       const display = !editable
                         ? (formatted ?? (raw || "—"))
                         : raw

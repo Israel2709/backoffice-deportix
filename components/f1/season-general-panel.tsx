@@ -8,12 +8,13 @@ import { toast } from "sonner";
 import {
   getAdminF1Season,
   listF1Participants,
-  listDriverRankings,
+  listSeasonDriverRankings,
   listSeasonRaces,
   updateF1Season,
 } from "@/lib/api/admin-f1";
 import {
   SEASON_STATUS_LABEL,
+  parseSeasonId,
   seasonLabel,
   type SeasonStatus,
 } from "@/lib/api/f1-types";
@@ -42,9 +43,17 @@ export function SeasonGeneralPanel({ seasonId }: { seasonId: string }) {
     queryKey: ["admin", "f1", "races", seasonId],
     queryFn: () => listSeasonRaces(seasonId),
   });
+  let seasonYear = 0;
+  try {
+    seasonYear = parseSeasonId(seasonId).year;
+  } catch {
+    seasonYear = 0;
+  }
+
   const rankingsQuery = useQuery({
-    queryKey: ["admin", "f1", "driver-rankings", seasonId],
-    queryFn: () => listDriverRankings(seasonId),
+    queryKey: ["admin", "f1", "season-driver-rankings", seasonYear],
+    queryFn: () => listSeasonDriverRankings(seasonYear),
+    enabled: seasonYear > 0,
   });
 
   const [form, setForm] = useState({

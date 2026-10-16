@@ -25,7 +25,6 @@ export function F1SeasonTabs({
         { href: `${base}/participantes`, label: "Participantes" },
         { href: `${base}/calendario`, label: "Calendario" },
         { href: `${base}/resultados`, label: "Resultados" },
-        { href: `${base}/clasificaciones`, label: "Clasificaciones" },
       ]}
     />
   );

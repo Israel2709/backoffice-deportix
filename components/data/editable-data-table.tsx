@@ -420,9 +420,14 @@ export function EditableDataTable<T extends { id: string }>({
                         editableMode &&
                         col.editable !== false &&
                         (col.isCellEditable?.(row) ?? true);
-                      const display = raw
-                        ? (col.format?.(raw, row) ?? raw)
-                        : (col.placeholder ?? "—");
+                      // Locked cells always prefer format (e.g. "—") over the
+                      // edit placeholder, even when the raw value is empty.
+                      const formatted = col.format?.(raw, row);
+                      const display = !editable
+                        ? (formatted ?? (raw || "—"))
+                        : raw
+                          ? (formatted ?? raw)
+                          : (col.placeholder ?? formatted ?? "—");
                       const selectOptions =
                         typeof col.options === "function"
                           ? col.options(row, values)

@@ -5,6 +5,7 @@ import { use, useMemo } from "react";
 import { getAdminCompetition, getAdminF1Season } from "@/lib/api/admin-f1";
 import {
   SEASON_STATUS_LABEL,
+  normalizeSeasonIdParam,
   parseSeasonId,
   seasonLabel,
 } from "@/lib/api/f1-types";
@@ -25,7 +26,13 @@ export default function F1SeasonLayout({
   children: React.ReactNode;
   params: Promise<{ competitionId: string; seasonId: string }>;
 }) {
-  const { competitionId, seasonId } = use(params);
+  const { competitionId, seasonId: seasonIdParam } = use(params);
+  let seasonId = seasonIdParam;
+  try {
+    seasonId = normalizeSeasonIdParam(seasonIdParam);
+  } catch {
+    // Panels that call parseSeasonId will surface the invalid id.
+  }
   const competitionQuery = useQuery({
     queryKey: ["admin", "f1", "competitions", competitionId],
     queryFn: () => getAdminCompetition(competitionId),
@@ -52,7 +59,8 @@ export default function F1SeasonLayout({
     return {
       id: competitionId,
       label: competitionQuery.data.data.name,
-      href: `/operacion/formula-1/${competitionId}/${encodeURIComponent(seasonId)}`,
+      // Raw season id — Next <Link> encodes once.
+      href: `/operacion/formula-1/${competitionId}/${seasonId}`,
     };
   }, [competitionId, competitionQuery.data?.data?.name, seasonId, yearLabel]);
 

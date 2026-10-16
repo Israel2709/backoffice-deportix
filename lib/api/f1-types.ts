@@ -246,10 +246,11 @@ export function seasonIdFor(competitionId: string, year: number): string {
   return `${competitionId}:${year}`;
 }
 
-function decodeRouteParam(value: string): string {
+/** Fully unwrap over-encoded route params (`%3A` → `%253A` → `%25253A`…). */
+export function decodeRouteParam(value: string): string {
   let current = value;
-  for (let i = 0; i < 2; i++) {
-    if (!current.includes("%")) return current;
+  for (let i = 0; i < 8; i++) {
+    if (!/%[0-9A-Fa-f]{2}/.test(current)) return current;
     try {
       const next = decodeURIComponent(current);
       if (next === current) return current;
@@ -259,6 +260,15 @@ function decodeRouteParam(value: string): string {
     }
   }
   return current;
+}
+
+/**
+ * Canonical `competitionId:year` for Next.js Link hrefs.
+ * Pass the raw colon form — Link encodes once; pre-encoding causes `%25253A`.
+ */
+export function normalizeSeasonIdParam(seasonId: string): string {
+  const { competitionId, year } = parseSeasonId(seasonId);
+  return seasonIdFor(competitionId, year);
 }
 
 export function parseSeasonId(seasonId: string): {

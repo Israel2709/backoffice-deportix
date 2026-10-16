@@ -60,8 +60,9 @@ type ResultsListRow = F1Race & {
   winning_team_id: string;
 };
 
-function isSprintRace(type: string | null | undefined) {
-  return type === "Sprint";
+/** Sprint Race and Sprint Shootout use sprint highlight fields. */
+function isSprintSession(type: string | null | undefined) {
+  return type === "Sprint" || type === "Sprint Shootout";
 }
 
 function toDateInput(value: string | null | undefined) {
@@ -117,7 +118,10 @@ export function SeasonResultsPanel({
     queryFn: listAdminF1Teams,
   });
 
-  const races = racesQuery.data?.data ?? [];
+  const races = useMemo(
+    () => racesQuery.data?.data ?? [],
+    [racesQuery.data?.data],
+  );
   const driversById = useMemo(
     () => new Map((driversQuery.data?.data ?? []).map((d) => [d.id, d])),
     [driversQuery.data],
@@ -176,8 +180,6 @@ export function SeasonResultsPanel({
       label: teamsById.get(id)?.name ?? id,
     }));
   }, [participantsQuery.data, teamsById]);
-
-  const hasSprintRows = races.some((race) => isSprintRace(race.type));
 
   const rows = useMemo<ResultsListRow[]>(
     () =>
@@ -264,7 +266,7 @@ export function SeasonResultsPanel({
             ...current,
             p1_driver_id: value,
             winning_team_id: teamId,
-            ...(isSprintRace(row.type)
+            ...(isSprintSession(row.type)
               ? { sprint_winner: value, sprint_winning_team: teamId }
               : {}),
           };
@@ -295,7 +297,9 @@ export function SeasonResultsPanel({
         editAs: "select",
         placeholder: "Piloto…",
         options: driverOptions,
-        format: (id) => formatDriver(id),
+        isCellEditable: (row) => !isSprintSession(row.type),
+        format: (id, row) =>
+          isSprintSession(row.type) ? "—" : formatDriver(id),
       },
       {
         id: "pole_driver_id",
@@ -304,13 +308,15 @@ export function SeasonResultsPanel({
         editAs: "select",
         placeholder: "Piloto…",
         options: driverOptions,
-        format: (id) => formatDriver(id),
+        isCellEditable: (row) => !isSprintSession(row.type),
+        format: (id, row) =>
+          isSprintSession(row.type) ? "—" : formatDriver(id),
         onCellChange: (_rowId, columnId, value, current, row) => {
           if (columnId !== "pole_driver_id") return;
           return {
             ...current,
             pole_driver_id: value,
-            ...(isSprintRace(row.type) ? { sprint_pole: value } : {}),
+            ...(isSprintSession(row.type) ? { sprint_pole: value } : {}),
           };
         },
       },
@@ -321,79 +327,79 @@ export function SeasonResultsPanel({
         editAs: "select",
         placeholder: "Equipo…",
         options: teamOptions,
-        format: (id) => formatTeam(id),
+        isCellEditable: (row) => !isSprintSession(row.type),
+        format: (id, row) =>
+          isSprintSession(row.type) ? "—" : formatTeam(id),
         onCellChange: (_rowId, columnId, value, current, row) => {
           if (columnId !== "winning_team_id") return;
           return {
             ...current,
             winning_team_id: value,
-            ...(isSprintRace(row.type) ? { sprint_winning_team: value } : {}),
+            ...(isSprintSession(row.type) ? { sprint_winning_team: value } : {}),
           };
         },
       },
     ];
 
-    if (hasSprintRows) {
-      base.push(
-        {
-          id: "sprint_pole",
-          header: "Sprint pole",
-          filterable: false,
-          editAs: "select",
-          placeholder: "Piloto…",
-          options: driverOptions,
-          isCellEditable: (row) => isSprintRace(row.type),
-          format: (id, row) =>
-            isSprintRace(row.type) ? formatDriver(id) : "—",
-          onCellChange: (_rowId, columnId, value, current) => {
-            if (columnId !== "sprint_pole") return;
-            return { ...current, sprint_pole: value, pole_driver_id: value };
-          },
+    base.push(
+      {
+        id: "sprint_pole",
+        header: "Sprint pole",
+        filterable: false,
+        editAs: "select",
+        placeholder: "Piloto…",
+        options: driverOptions,
+        isCellEditable: (row) => isSprintSession(row.type),
+        format: (id, row) =>
+          isSprintSession(row.type) ? formatDriver(id) : "—",
+        onCellChange: (_rowId, columnId, value, current) => {
+          if (columnId !== "sprint_pole") return;
+          return { ...current, sprint_pole: value, pole_driver_id: value };
         },
-        {
-          id: "sprint_winner",
-          header: "Sprint winner",
-          filterable: false,
-          editAs: "select",
-          placeholder: "Piloto…",
-          options: driverOptions,
-          isCellEditable: (row) => isSprintRace(row.type),
-          format: (id, row) =>
-            isSprintRace(row.type) ? formatDriver(id) : "—",
-          onCellChange: (_rowId, columnId, value, current) => {
-            if (columnId !== "sprint_winner") return;
-            const teamId =
-              teamIdByDriver.get(value) ?? current.winning_team_id;
-            return {
-              ...current,
-              sprint_winner: value,
-              sprint_winning_team: teamId,
-              p1_driver_id: value,
-              winning_team_id: teamId,
-            };
-          },
+      },
+      {
+        id: "sprint_winner",
+        header: "Sprint winner",
+        filterable: false,
+        editAs: "select",
+        placeholder: "Piloto…",
+        options: driverOptions,
+        isCellEditable: (row) => isSprintSession(row.type),
+        format: (id, row) =>
+          isSprintSession(row.type) ? formatDriver(id) : "—",
+        onCellChange: (_rowId, columnId, value, current) => {
+          if (columnId !== "sprint_winner") return;
+          const teamId =
+            teamIdByDriver.get(value) ?? current.winning_team_id;
+          return {
+            ...current,
+            sprint_winner: value,
+            sprint_winning_team: teamId,
+            p1_driver_id: value,
+            winning_team_id: teamId,
+          };
         },
-        {
-          id: "sprint_winning_team",
-          header: "Sprint winning team",
-          filterable: false,
-          editAs: "select",
-          placeholder: "Equipo…",
-          options: teamOptions,
-          isCellEditable: (row) => isSprintRace(row.type),
-          format: (id, row) =>
-            isSprintRace(row.type) ? formatTeam(id) : "—",
-          onCellChange: (_rowId, columnId, value, current) => {
-            if (columnId !== "sprint_winning_team") return;
-            return {
-              ...current,
-              sprint_winning_team: value,
-              winning_team_id: value,
-            };
-          },
+      },
+      {
+        id: "sprint_winning_team",
+        header: "Sprint winning team",
+        filterable: false,
+        editAs: "select",
+        placeholder: "Equipo…",
+        options: teamOptions,
+        isCellEditable: (row) => isSprintSession(row.type),
+        format: (id, row) =>
+          isSprintSession(row.type) ? formatTeam(id) : "—",
+        onCellChange: (_rowId, columnId, value, current) => {
+          if (columnId !== "sprint_winning_team") return;
+          return {
+            ...current,
+            sprint_winning_team: value,
+            winning_team_id: value,
+          };
         },
-      );
-    }
+      },
+    );
 
     return base;
     // formatDriver/formatTeam close over maps; keep deps explicit.
@@ -402,7 +408,6 @@ export function SeasonResultsPanel({
     circuitsById,
     driverOptions,
     teamOptions,
-    hasSprintRows,
     teamIdByDriver,
     driversById,
     teamsById,
@@ -495,10 +500,10 @@ export function SeasonResultsPanel({
       />
 
       <Note>
-        Clic en P1–P3, pole, vuelta rápida o winning team para editar. En
-        carreras Sprint también puedes editar sprint pole, sprint winner y
-        sprint winning team (quedan sincronizados con pole, P1 y winning
-        team).
+        En Race y Qualifying edita P1–P3, fastest lap, race pole y winning
+        team. En Sprint Race y Sprint Shootout edita P1–P3 más sprint pole,
+        sprint winner y sprint winning team (sincronizados con pole, P1 y
+        winning team).
       </Note>
     </div>
   );

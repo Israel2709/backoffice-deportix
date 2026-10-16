@@ -203,7 +203,7 @@ export function CompetitionsListPanel({ year }: { year: number }) {
         onSave={(changes) => saveMutation.mutateAsync(changes)}
         saving={saveMutation.isPending}
         rowHref={(row) =>
-          `/operacion/formula-1/${row.id}/${encodeURIComponent(seasonIdFor(row.id, year))}`
+          `/operacion/formula-1/${row.id}/${seasonIdFor(row.id, year)}`
         }
         editHref={(row) =>
           `/operacion/formula-1/temporada/${year}/${encodeURIComponent(row.id)}/editar`

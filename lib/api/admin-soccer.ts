@@ -513,9 +513,20 @@ export async function listAdminSeasonYears(): List<number> {
 }
 
 /**
- * Organizations for the season-first nav step, including the
+ * Organizations for the org-first operación nav, including the
  * "Sin organización deportiva" bucket for leagues without organization_id.
- * Uses `leagues?season=` (indexed by year on the API — no per-league N+1).
+ */
+export async function listNavOrganizations(): List<SoccerNavOrganization> {
+  const [{ data: orgs }, { data: leagues }] = await Promise.all([
+    listAdminOrganizations(),
+    listAdminLeagues(),
+  ]);
+  return { data: organizationsForSeasonYear(leagues, orgs) };
+}
+
+/**
+ * @deprecated Prefer listNavOrganizations — year is no longer part of the nav.
+ * Kept for any leftover season-year callers.
  */
 export async function listOrganizationsForSeasonYear(
   year: number,
@@ -535,7 +546,32 @@ export async function listOrganizationsForSeasonYear(
   return { data: organizationsForSeasonYear(yearLeagues, orgs) };
 }
 
-/** Competitions for an org in a season — scoped BFF query (no full-catalog walk). */
+/** Leagues for an organization (all seasons) — org → liga step. */
+export async function listLeaguesForOrganization(
+  orgId: string,
+): List<SoccerLeague> {
+  if (isDefaultOrganizationId(orgId)) {
+    const { data } = await listAdminLeagues();
+    return {
+      data: data.filter((league) => !league.organization_id?.trim()),
+    };
+  }
+
+  const response = await bffRequest<BffLeagueEntry[]>(
+    `leagues?organization=${encodeURIComponent(orgId)}`,
+  );
+  const data = asList(response)
+    .map((entry) => {
+      const id = leagueExternalId(entry);
+      return id ? mapLeague(entry, id) : null;
+    })
+    .filter((league): league is SoccerLeague => league != null);
+  return { data };
+}
+
+/**
+ * @deprecated Prefer listLeaguesForOrganization — year filter removed from nav.
+ */
 export async function listLeaguesForOrgSeasonYear(
   orgId: string,
   year: number,

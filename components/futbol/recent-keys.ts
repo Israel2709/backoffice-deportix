@@ -1,18 +1,10 @@
 /** localStorage keys for soccer operación recent-visit surfaces. */
-export const SOCCER_SEASON_RECENT_KEY = "operacion:futbol:seasons";
+export const SOCCER_ORG_RECENT_KEY = "operacion:futbol:organizations";
 
-/** Recent organizations for a season year. */
-export function soccerOrgRecentKey(year: number | string): string {
-  return `operacion:futbol:organizations:${year}`;
-}
-
-/** Recent competitions under year + org. */
-export function soccerCompetitionRecentKey(
-  year: number | string,
-  orgId: string,
-): string {
-  return `operacion:futbol:competitions:${year}:${orgId}`;
+/** Recent leagues under an organization. */
+export function soccerLeagueRecentKey(orgId: string): string {
+  return `operacion:futbol:leagues:${orgId}`;
 }
 
 export const SOCCER_ORG_RECENT_MAX = 10;
-export const SOCCER_COMPETITION_RECENT_MAX = 10;
+export const SOCCER_LEAGUE_RECENT_MAX = 10;

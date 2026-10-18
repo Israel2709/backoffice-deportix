@@ -6,14 +6,11 @@ import { useState } from "react";
 import { toast } from "sonner";
 import {
   createLeague,
-  createSeason,
   getAdminOrganization,
-  listAdminSeasons,
 } from "@/lib/api/admin-soccer";
 import {
   isDefaultOrganizationId,
-  soccerOrgCompetitionsHref,
-  soccerPartidosHref,
+  soccerOrgHref,
 } from "@/lib/api/soccer-structure";
 import { LogoUrlOrFileField } from "@/components/capture/logo-url-or-file-field";
 import { Field, TextInput, TextSelect } from "@/components/capture/field";
@@ -21,13 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Note } from "@/components/ui/note";
 import { LoadingBlock, Spinner } from "@/components/ui/spinner";
 
-export function CreateCompetitionPanel({
-  year,
-  orgId,
-}: {
-  year: number;
-  orgId: string;
-}) {
+export function CreateCompetitionPanel({ orgId }: { orgId: string }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [form, setForm] = useState({
@@ -63,21 +54,10 @@ export function CreateCompetitionPanel({
         logo: form.logo.trim() || null,
       });
 
-      const leagueId = created.data.id;
-      const { data: seasons } = await listAdminSeasons(leagueId);
-      const hasYear = seasons.some((season) => season.year === year);
-      if (!hasYear) {
-        await createSeason({
-          league_id: leagueId,
-          year,
-          status: "upcoming",
-        });
-      }
-
-      return { leagueId };
+      return { leagueId: created.data.id };
     },
     onSuccess: ({ leagueId }) => {
-      toast.success("Competición creada");
+      toast.success("Liga creada");
       void queryClient.invalidateQueries({
         queryKey: ["admin", "soccer", "leagues"],
       });
@@ -87,10 +67,7 @@ export function CreateCompetitionPanel({
       void queryClient.invalidateQueries({
         queryKey: ["admin", "soccer", "nav-orgs"],
       });
-      void queryClient.invalidateQueries({
-        queryKey: ["admin", "soccer", "season-years"],
-      });
-      router.push(soccerPartidosHref(leagueId, year));
+      router.push(`/operacion/futbol/${encodeURIComponent(leagueId)}`);
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -116,16 +93,12 @@ export function CreateCompetitionPanel({
   const org = orgQuery.data?.data;
   const countryLabel =
     org?.country_name?.trim() || org?.country_id?.trim() || "—";
-  const cancelHref = soccerOrgCompetitionsHref(year, orgId);
+  const cancelHref = soccerOrgHref(orgId);
 
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border border-dx-line bg-dx-card p-5 md:p-6">
-        <div className="mb-4 grid grid-cols-1 gap-2 rounded-xl border border-dx-line bg-[#f7f9fc] px-3.5 py-3 text-[13px] text-dx-muted md:grid-cols-3">
-          <div>
-            <span className="font-semibold text-dx-ink">Temporada: </span>
-            {year}
-          </div>
+        <div className="mb-4 grid grid-cols-1 gap-2 rounded-xl border border-dx-line bg-[#f7f9fc] px-3.5 py-3 text-[13px] text-dx-muted md:grid-cols-2">
           <div>
             <span className="font-semibold text-dx-ink">Organización: </span>
             {org?.name ?? orgId}
@@ -184,15 +157,15 @@ export function CreateCompetitionPanel({
                 <Spinner size="sm" className="text-white" /> Creando…
               </span>
             ) : (
-              "Crear competición"
+              "Crear liga"
             )}
           </Button>
         </div>
       </div>
 
       <Note>
-        El país se infiere de la organización. Al crear, se registra la
-        temporada {year} y pasarás a Partidos.
+        El país se infiere de la organización. Después podrás crear temporadas
+        de la liga.
       </Note>
     </div>
   );

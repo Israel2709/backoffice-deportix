@@ -7,16 +7,16 @@ import {
 } from "@/components/ui/country-card";
 import { Note } from "@/components/ui/note";
 import { LoadingBlock } from "@/components/ui/spinner";
-import { listOrganizationsForSeasonYear } from "@/lib/api/admin-soccer";
+import { listNavOrganizations } from "@/lib/api/admin-soccer";
 import {
   isDefaultOrganizationId,
-  soccerOrgCompetitionsHref,
+  soccerOrgHref,
 } from "@/lib/api/soccer-structure";
 
-export function OrganizationsListPanel({ year }: { year: number }) {
+export function OrganizationsListPanel() {
   const orgsQuery = useQuery({
-    queryKey: ["admin", "soccer", "nav-orgs", year],
-    queryFn: () => listOrganizationsForSeasonYear(year),
+    queryKey: ["admin", "soccer", "nav-orgs"],
+    queryFn: () => listNavOrganizations(),
   });
 
   if (orgsQuery.isLoading) {
@@ -47,7 +47,7 @@ export function OrganizationsListPanel({ year }: { year: number }) {
           </p>
         </div>
         <Note className="mt-5">
-          Flujo: Temporada → Organización → Competición → Partidos.
+          Flujo: Organización → Liga → Temporada → Detalle.
         </Note>
       </>
     );
@@ -59,7 +59,7 @@ export function OrganizationsListPanel({ year }: { year: number }) {
         {rows.map((org) => (
           <CountryCard
             key={org.id}
-            href={soccerOrgCompetitionsHref(year, org.id)}
+            href={soccerOrgHref(org.id)}
             name={org.name}
             code={
               isDefaultOrganizationId(org.id)

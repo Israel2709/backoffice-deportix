@@ -15,11 +15,12 @@ import {
 } from "@/lib/api/soccer-types";
 import {
   DEFAULT_ORGANIZATION_ID,
-  soccerOrgCompetitionsHref,
+  soccerOrgHref,
+  soccerSeasonHref,
 } from "@/lib/api/soccer-structure";
 import {
-  SOCCER_COMPETITION_RECENT_MAX,
-  soccerCompetitionRecentKey,
+  SOCCER_LEAGUE_RECENT_MAX,
+  soccerLeagueRecentKey,
 } from "@/components/futbol/recent-keys";
 import { SeasonTabs } from "@/components/capture/season-tabs";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -44,7 +45,7 @@ export default function SeasonLayout({
   });
 
   const league = leagueQuery.data?.data;
-  const leagueName = league?.name ?? "Competición";
+  const leagueName = league?.name ?? "Liga";
   const season = seasonQuery.data?.data;
 
   const year = useMemo(() => {
@@ -55,8 +56,7 @@ export default function SeasonLayout({
     }
   }, [seasonId, season?.year]);
 
-  const orgId =
-    league?.organization_id?.trim() || DEFAULT_ORGANIZATION_ID;
+  const orgId = league?.organization_id?.trim() || DEFAULT_ORGANIZATION_ID;
 
   const orgQuery = useQuery({
     queryKey: ["admin", "soccer", "organizations", orgId],
@@ -70,24 +70,21 @@ export default function SeasonLayout({
     (orgId === DEFAULT_ORGANIZATION_ID ? "Sin organización" : "Organización");
 
   const yearLabel = year != null ? String(year) : "Temporada";
-  const competitionsHref =
-    year != null ? soccerOrgCompetitionsHref(year, orgId) : "/operacion/futbol";
+  const leagueHref = `/operacion/futbol/${encodeURIComponent(leagueId)}`;
 
   const recentItem = useMemo(() => {
     if (year == null || !leagueId) return null;
     return {
       id: leagueId,
       label: leagueName,
-      href: `/operacion/futbol/${encodeURIComponent(leagueId)}/${encodeURIComponent(seasonId)}/partidos`,
+      href: soccerSeasonHref(leagueId, year),
     };
-  }, [year, leagueId, leagueName, seasonId]);
+  }, [year, leagueId, leagueName]);
 
   useRecordRecentVisit(
-    year != null
-      ? soccerCompetitionRecentKey(year, orgId)
-      : "operacion:futbol:competitions:unknown",
+    soccerLeagueRecentKey(orgId),
     recentItem,
-    SOCCER_COMPETITION_RECENT_MAX,
+    SOCCER_LEAGUE_RECENT_MAX,
   );
 
   return (
@@ -96,14 +93,11 @@ export default function SeasonLayout({
         items={[
           { label: "Operación Deportiva", href: "/operacion" },
           { label: "Fútbol", href: "/operacion/futbol" },
-          {
-            label: yearLabel,
-            href: `/operacion/futbol/temporada/${encodeURIComponent(yearLabel)}`,
-          },
-          { label: orgName, href: competitionsHref },
-          { label: leagueName },
+          { label: orgName, href: soccerOrgHref(orgId) },
+          { label: leagueName, href: leagueHref },
+          { label: yearLabel },
         ]}
-        backLabel="Competiciones"
+        backLabel="Temporadas"
       >
         <section className="mb-5 rounded-[18px] border border-dx-line bg-dx-card px-7 py-[26px]">
           <div className="flex flex-wrap items-start justify-between gap-4">

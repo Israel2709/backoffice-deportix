@@ -9,29 +9,22 @@ import { Note } from "@/components/ui/note";
 import { LoadingBlock } from "@/components/ui/spinner";
 import {
   listAdminOrganizations,
-  listLeaguesForOrgSeasonYear,
+  listLeaguesForOrganization,
   updateLeague,
 } from "@/lib/api/admin-soccer";
 import {
   isDefaultOrganizationId,
-  soccerOrgCompetitionsHref,
-  soccerPartidosHref,
+  soccerOrgHref,
 } from "@/lib/api/soccer-structure";
 import type { SoccerLeague } from "@/lib/api/soccer-types";
 
-export function CompetitionsListPanel({
-  year,
-  orgId,
-}: {
-  year: number;
-  orgId: string;
-}) {
+export function CompetitionsListPanel({ orgId }: { orgId: string }) {
   const queryClient = useQueryClient();
   const isUnassigned = isDefaultOrganizationId(orgId);
 
   const leaguesQuery = useQuery({
-    queryKey: ["admin", "soccer", "nav-leagues", year, orgId],
-    queryFn: () => listLeaguesForOrgSeasonYear(orgId, year),
+    queryKey: ["admin", "soccer", "nav-leagues", orgId],
+    queryFn: () => listLeaguesForOrganization(orgId),
   });
   const orgsQuery = useQuery({
     queryKey: ["admin", "soccer", "organizations"],
@@ -39,7 +32,7 @@ export function CompetitionsListPanel({
     enabled: isUnassigned,
   });
 
-  const nuevaHref = `${soccerOrgCompetitionsHref(year, orgId)}/nueva`;
+  const nuevaHref = `${soccerOrgHref(orgId)}/nueva`;
   const organizations = orgsQuery.data?.data ?? [];
 
   const orgOptions = useMemo(
@@ -166,25 +159,25 @@ export function CompetitionsListPanel({
         <div className="rounded-2xl border border-dashed border-dx-line bg-dx-card px-6 py-12 text-center shadow-[0_4px_14px_rgba(19,53,105,0.06)]">
           <p className="text-[16px] font-semibold text-dx-ink">
             {isUnassigned
-              ? `No hay competiciones sin organización en ${year}`
-              : `No hay competiciones en ${year}`}
+              ? "No hay competiciones sin organización"
+              : "No hay ligas en esta organización"}
           </p>
           <p className="mt-2 text-[14px] text-dx-muted">
             {isUnassigned
-              ? "Todas las competiciones de esta temporada ya tienen organización."
-              : "Crea la primera competición para esta organización y temporada."}
+              ? "Todas las competiciones ya tienen organización asignada."
+              : "Crea la primera liga para esta organización."}
           </p>
           {!isUnassigned ? (
             <Link
               href={nuevaHref}
               className="mt-5 inline-flex items-center gap-2 rounded-[10px] bg-dx-blue px-[15px] py-[11px] text-sm font-bold !text-white hover:bg-dx-blue2"
             >
-              + Crear competición
+              + Crear liga
             </Link>
           ) : null}
         </div>
         <Note className="mt-5">
-          Flujo: Temporada → Organización → Competición → Partidos.
+          Flujo: Organización → Liga → Temporada → Detalle.
         </Note>
       </>
     );
@@ -196,7 +189,7 @@ export function CompetitionsListPanel({
         columns={columns}
         rows={rows}
         getValues={getValues}
-        rowHref={(row) => soccerPartidosHref(row.id, year)}
+        rowHref={(row) => `/operacion/futbol/${encodeURIComponent(row.id)}`}
         showOpenAction
         saving={saveMutation.isPending}
         onSave={
@@ -204,12 +197,12 @@ export function CompetitionsListPanel({
             ? (changes) => saveMutation.mutateAsync(changes)
             : undefined
         }
-        emptyLabel="No hay competiciones."
+        emptyLabel="No hay ligas."
       />
       <Note className="mt-5">
         {isUnassigned
           ? "Asigna una organización a cada competición huérfana y guarda. El país se toma de la organización."
-          : "Flujo: Temporada → Organización → Competición → Partidos."}
+          : "Selecciona una liga para ver y operar sus temporadas."}
       </Note>
     </>
   );

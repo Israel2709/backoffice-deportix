@@ -192,7 +192,7 @@ export function equiposHref(countryId?: string, orgId?: string, leagueId?: strin
   return parts.join("/");
 }
 
-/** Org card used in Operación season-first navigation. */
+/** Org card used in Operación org-first navigation. */
 export type SoccerNavOrganization = {
   id: string;
   name: string;
@@ -203,8 +203,8 @@ export type SoccerNavOrganization = {
 };
 
 /**
- * Build org cards for a season year: every stored org (even with 0 leagues that
- * year, so alta under org works) plus a "Sin organización" bucket when needed.
+ * Build org cards from leagues + catalog: every stored org (even with 0 leagues,
+ * so alta under org works) plus a "Sin organización" bucket when needed.
  */
 export function organizationsForSeasonYear(
   yearLeagues: SoccerLeague[],
@@ -275,11 +275,24 @@ export function isDefaultOrganizationId(orgId: string): boolean {
   return normalize(safeDecode(orgId)) === normalize(DEFAULT_ORGANIZATION_ID);
 }
 
-export function soccerPartidosHref(leagueId: string, year: number): string {
+export function soccerSeasonHref(leagueId: string, year: number): string {
   const seasonId = `${leagueId}:${year}`;
-  return `/operacion/futbol/${encodeURIComponent(leagueId)}/${encodeURIComponent(seasonId)}/partidos`;
+  return `/operacion/futbol/${encodeURIComponent(leagueId)}/${encodeURIComponent(seasonId)}`;
 }
 
-export function soccerOrgCompetitionsHref(year: number | string, orgId: string): string {
-  return `/operacion/futbol/temporada/${encodeURIComponent(String(year))}/organizacion/${encodeURIComponent(orgId)}`;
+export function soccerPartidosHref(leagueId: string, year: number): string {
+  return `${soccerSeasonHref(leagueId, year)}/partidos`;
+}
+
+/** Org → ligas (flujo operación: organización → liga → temporada). */
+export function soccerOrgHref(orgId: string): string {
+  return `/operacion/futbol/organizacion/${encodeURIComponent(orgId)}`;
+}
+
+/** @deprecated Prefer soccerOrgHref — year is no longer part of the nav path. */
+export function soccerOrgCompetitionsHref(
+  _year: number | string,
+  orgId: string,
+): string {
+  return soccerOrgHref(orgId);
 }

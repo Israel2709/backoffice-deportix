@@ -1,15 +1,20 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
-import { use } from "react";
+import { use, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
-import { getAdminLeague, listAdminSeasons } from "@/lib/api/admin-soccer";
-import { soccerPartidosHref } from "@/lib/api/soccer-structure";
+import { getAdminLeague, getAdminOrganization } from "@/lib/api/admin-soccer";
+import {
+  DEFAULT_ORGANIZATION_ID,
+  soccerOrgHref,
+} from "@/lib/api/soccer-structure";
+import {
+  SOCCER_LEAGUE_RECENT_MAX,
+  soccerLeagueRecentKey,
+} from "@/components/futbol/recent-keys";
 import { SeasonsListPanel } from "@/components/futbol/seasons-list-panel";
 import { Hero } from "@/components/ui/hero";
 import { PageHeader } from "@/components/ui/page";
-import { LoadingBlock } from "@/components/ui/spinner";
+import { useRecordRecentVisit } from "@/hooks/use-recent-visits";
 
 export default function OperacionFutbolLeaguePage({
   params,
@@ -17,53 +22,59 @@ export default function OperacionFutbolLeaguePage({
   params: Promise<{ leagueId: string }>;
 }) {
   const { leagueId } = use(params);
-  const router = useRouter();
 
   const leagueQuery = useQuery({
     queryKey: ["admin", "soccer", "leagues", leagueId],
     queryFn: () => getAdminLeague(leagueId),
   });
-  const seasonsQuery = useQuery({
-    queryKey: ["admin", "soccer", "seasons", leagueId],
-    queryFn: () => listAdminSeasons(leagueId),
+
+  const league = leagueQuery.data?.data;
+  const leagueName = league?.name ?? "Liga";
+  const orgId = league?.organization_id?.trim() || DEFAULT_ORGANIZATION_ID;
+
+  const orgQuery = useQuery({
+    queryKey: ["admin", "soccer", "organizations", orgId],
+    queryFn: () => getAdminOrganization(orgId),
+    enabled: Boolean(orgId),
   });
 
-  const redirectHref = useMemo(() => {
-    const seasons = seasonsQuery.data?.data ?? [];
-    if (seasons.length === 0) return null;
-    const preferred =
-      seasons.find((s) => s.status === "current") ??
-      seasons.find((s) => s.status === "upcoming") ??
-      [...seasons].sort((a, b) => b.year - a.year)[0];
-    if (!preferred) return null;
-    return soccerPartidosHref(leagueId, preferred.year);
-  }, [leagueId, seasonsQuery.data?.data]);
+  const orgName =
+    orgQuery.data?.data.name ??
+    league?.organization_name ??
+    (orgId === DEFAULT_ORGANIZATION_ID
+      ? "Sin organización"
+      : "Organización");
 
-  useEffect(() => {
-    if (redirectHref) router.replace(redirectHref);
-  }, [redirectHref, router]);
+  const recentItem = useMemo(() => {
+    if (!leagueId) return null;
+    return {
+      id: leagueId,
+      label: leagueName,
+      href: `/operacion/futbol/${encodeURIComponent(leagueId)}`,
+    };
+  }, [leagueId, leagueName]);
 
-  const leagueName = leagueQuery.data?.data.name ?? "Competición";
+  useRecordRecentVisit(
+    soccerLeagueRecentKey(orgId),
+    recentItem,
+    SOCCER_LEAGUE_RECENT_MAX,
+  );
 
-  if (seasonsQuery.isLoading || leagueQuery.isLoading || redirectHref) {
-    return <LoadingBlock label="Redirigiendo a la temporada…" />;
-  }
-
-  // No seasons yet — keep list/create panel so operators can add the first year.
   return (
     <>
       <PageHeader
         items={[
           { label: "Operación Deportiva", href: "/operacion" },
           { label: "Fútbol", href: "/operacion/futbol" },
+          { label: orgName, href: soccerOrgHref(orgId) },
           { label: leagueName },
         ]}
-        backLabel="Temporadas"
+        backLabel="Ligas"
       >
         <Hero
           eyebrow="Operación · Fútbol"
           title={leagueName}
-          description="Esta competición aún no tiene temporadas. Crea la primera para operar partidos."
+          description="Selecciona una temporada para ver el detalle de la competición: General, Participantes, Estructura, Partidos y Clasificación."
         />
       </PageHeader>
       <SeasonsListPanel leagueId={leagueId} />

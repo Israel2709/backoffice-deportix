@@ -15,11 +15,16 @@ export default function TenisMaestrosPage() {
         <Hero
           eyebrow="Datos Maestros · Tenis"
           title="Tenis"
-          description="Jugadores como catálogo maestro para ediciones de torneo."
+          description="Torneos y jugadores reutilizables para la operación."
         />
       </PageHeader>
 
       <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+        <ClickCard
+          href="/datos-maestros/tenis/torneos"
+          title="Torneos"
+          description="Nombre, categoría, sede, fechas, imagen e imagen alternativa."
+        />
         <ClickCard
           href="/datos-maestros/tenis/jugadores"
           title="Jugadores"
@@ -28,7 +33,7 @@ export default function TenisMaestrosPage() {
       </div>
 
       <Note>
-        Las ediciones y el draw se operan en Operación Deportiva · Tenis.
+        Participantes, draw y partidos se operan en Operación Deportiva · Tenis.
       </Note>
     </>
   );

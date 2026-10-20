@@ -15,6 +15,7 @@ import type {
   TennisPlayer,
   TennisPlayerStatus,
   TennisPublishStatus,
+  TennisTournamentCategory,
 } from "./tennis-types";
 
 export type {
@@ -22,6 +23,7 @@ export type {
   TennisPublishStatus,
   TennisMatchBoStatus,
   TennisPlayerStatus,
+  TennisTournamentCategory,
 };
 
 type List<T> = Promise<ApiListResponse<T>>;
@@ -52,9 +54,11 @@ type BffTournament = {
   country: { code: string; name?: string | null };
   city?: string | null;
   imageUrl?: string | null;
+  altImageUrl?: string | null;
   startDate: string;
   endDate: string;
   year: number;
+  drawSize?: number | null;
   status: "upcoming" | "active" | "finished" | "cancelled";
   published: boolean;
 };
@@ -131,8 +135,15 @@ function fromUiGender(gender: "ATP" | "WTA"): "male" | "female" {
   return gender === "WTA" ? "female" : "male";
 }
 
-function categoryFromGender(gender: "ATP" | "WTA"): "atp_1000" | "wta_1000" {
+function categoryFromGender(gender: "ATP" | "WTA"): TennisTournamentCategory {
   return gender === "WTA" ? "wta_1000" : "atp_1000";
+}
+
+function toUiCategory(value: string | null | undefined): TennisTournamentCategory {
+  if (value === "grand_slam" || value === "atp_1000" || value === "wta_1000") {
+    return value;
+  }
+  return "atp_1000";
 }
 
 function toUiStatus(
@@ -242,10 +253,21 @@ function mapEdition(t: BffTournament): TennisEdition {
   return {
     id: String(t.id),
     tournament_name: t.name,
+    short_name: t.shortName ?? null,
+    category: toUiCategory(t.category),
     year: t.year,
     gender: toUiGender(t.gender),
+    country_code: t.country?.code ?? null,
+    country_name: t.country?.name ?? null,
+    city: t.city ?? null,
+    image_url: t.imageUrl ?? null,
+    image_alt_url: t.altImageUrl ?? null,
     start_date: t.startDate ?? null,
     end_date: t.endDate ?? null,
+    participants_count:
+      typeof t.drawSize === "number" && Number.isFinite(t.drawSize)
+        ? t.drawSize
+        : null,
     status: toUiStatus(t.status),
     publish_status: t.published ? "published" : "draft",
   };
@@ -288,18 +310,19 @@ function mapMatch(m: BffMatch): TennisMatch {
   };
 }
 
-async function ensurePublished(
+async function syncPublishStatus(
   tournamentId: string,
   publishStatus?: TennisPublishStatus,
 ): Promise<void> {
-  if (publishStatus !== "published") return;
+  if (!publishStatus) return;
+  const path =
+    publishStatus === "published"
+      ? `${PREFIX}/tournaments/${encodeURIComponent(tournamentId)}/publish`
+      : `${PREFIX}/tournaments/${encodeURIComponent(tournamentId)}/unpublish`;
   try {
-    await bffRequest(
-      `${PREFIX}/tournaments/${encodeURIComponent(tournamentId)}/publish`,
-      { method: "POST" },
-    );
+    await bffRequest(path, { method: "POST" });
   } catch {
-    /* publish may already be set or unavailable */
+    /* publish state may already match or be unavailable */
   }
 }
 
@@ -455,37 +478,53 @@ export async function getAdminEdition(id: string): One<TennisEdition> {
 
 export async function createEdition(body: {
   tournament_name: string;
+  short_name?: string | null;
+  category?: TennisTournamentCategory;
   year: number;
   gender: "ATP" | "WTA";
+  country_code?: string | null;
+  city?: string | null;
+  image_url?: string | null;
+  image_alt_url?: string | null;
   start_date?: string | null;
   end_date?: string | null;
+  participants_count?: number | null;
   status?: TennisEditionStatus;
   publish_status?: TennisPublishStatus;
 }): One<TennisEdition> {
+  const countryCode = body.country_code?.trim().toUpperCase() || "XX";
   const response = await bffRequest<BffTournament[] | BffTournament>(
     `${PREFIX}/tournaments`,
     {
       method: "POST",
       body: JSON.stringify({
         name: body.tournament_name,
-        category: categoryFromGender(body.gender),
+        shortName: body.short_name?.trim() || null,
+        category: body.category ?? categoryFromGender(body.gender),
         gender: fromUiGender(body.gender),
         eventType: "singles",
-        countryCode: "US",
+        countryCode,
+        city: body.city?.trim() || null,
+        imageUrl: body.image_url?.trim() || null,
+        altImageUrl: body.image_alt_url?.trim() || null,
         startDate: dateOnly(body.start_date, body.year),
         endDate: endDateOnly(body.end_date, body.year),
         year: body.year,
+        drawSize:
+          typeof body.participants_count === "number" &&
+          Number.isFinite(body.participants_count)
+            ? body.participants_count
+            : null,
         status: fromUiStatus(body.status ?? "upcoming"),
       }),
     },
   );
   const created = firstOf(response);
   if (!created) throw new Error("Edition create returned empty response");
-  await ensurePublished(created.id, body.publish_status);
+  const publishStatus = body.publish_status ?? "published";
+  await syncPublishStatus(created.id, publishStatus);
   const edition = mapEdition(created);
-  if (body.publish_status === "published") {
-    edition.publish_status = "published";
-  }
+  edition.publish_status = publishStatus;
   return { data: edition };
 }
 
@@ -493,10 +532,17 @@ export async function updateEdition(
   id: string,
   body: Partial<{
     tournament_name: string;
+    short_name: string | null;
+    category: TennisTournamentCategory;
     year: number;
     gender: "ATP" | "WTA";
+    country_code: string | null;
+    city: string | null;
+    image_url: string | null;
+    image_alt_url: string | null;
     start_date: string | null;
     end_date: string | null;
+    participants_count: number | null;
     status: TennisEditionStatus;
     publish_status: TennisPublishStatus;
   }>,
@@ -507,10 +553,23 @@ export async function updateEdition(
 
   const patch: Record<string, unknown> = {};
   if (body.tournament_name !== undefined) patch.name = body.tournament_name;
+  if (body.short_name !== undefined) {
+    patch.shortName = body.short_name?.trim() || null;
+  }
+  if (body.category !== undefined) patch.category = body.category;
   if (body.year !== undefined) patch.year = body.year;
   if (body.gender !== undefined) {
-    // Only flip gender; keep existing category (e.g. grand_slam).
     patch.gender = fromUiGender(body.gender);
+  }
+  if (body.country_code !== undefined) {
+    patch.countryCode = body.country_code?.trim().toUpperCase() || "XX";
+  }
+  if (body.city !== undefined) patch.city = body.city?.trim() || null;
+  if (body.image_url !== undefined) {
+    patch.imageUrl = body.image_url?.trim() || null;
+  }
+  if (body.image_alt_url !== undefined) {
+    patch.altImageUrl = body.image_alt_url?.trim() || null;
   }
   if (body.start_date !== undefined) {
     patch.startDate = dateOnly(body.start_date, year);
@@ -518,10 +577,21 @@ export async function updateEdition(
   if (body.end_date !== undefined) {
     patch.endDate = endDateOnly(body.end_date, year);
   }
+  if (body.participants_count !== undefined) {
+    patch.drawSize =
+      typeof body.participants_count === "number" &&
+      Number.isFinite(body.participants_count)
+        ? body.participants_count
+        : null;
+  }
   if (body.status !== undefined) patch.status = fromUiStatus(body.status);
 
-  if (Object.keys(patch).length === 0 && body.publish_status === undefined) {
-    return current;
+  if (Object.keys(patch).length === 0) {
+    if (body.publish_status === undefined) return current;
+    await syncPublishStatus(id, body.publish_status);
+    return {
+      data: { ...current.data, publish_status: body.publish_status },
+    };
   }
 
   const response = await bffRequest<BffTournament[] | BffTournament>(
@@ -533,12 +603,12 @@ export async function updateEdition(
   );
   const updated = firstOf(response);
   if (!updated) throw new Error("Edition update returned empty response");
-  await ensurePublished(id, body.publish_status);
+  if (body.publish_status !== undefined) {
+    await syncPublishStatus(id, body.publish_status);
+  }
   const edition = mapEdition(updated);
-  if (body.publish_status === "published") {
-    edition.publish_status = "published";
-  } else if (body.publish_status === "draft") {
-    edition.publish_status = "draft";
+  if (body.publish_status !== undefined) {
+    edition.publish_status = body.publish_status;
   }
   if (body.gender) edition.gender = gender;
   return { data: edition };
@@ -620,6 +690,83 @@ export async function deleteEditionMatch(matchId: string): Promise<void> {
   });
 }
 
+function buildResultPayload(match: {
+  player1_id?: string | null;
+  player2_id?: string | null;
+  winner_id?: string | null;
+  status: TennisMatchBoStatus;
+  sets?: Array<{ player1: number | null; player2: number | null }>;
+}): {
+  winnerId: string;
+  loserId?: string;
+  resultType: "normal" | "retirement" | "walkover" | "disqualification";
+  setsPlayer1?: number;
+  setsPlayer2?: number;
+  setScores?: Array<{ set: number; competitor1: number; competitor2: number }>;
+} | null {
+  const winnerId = match.winner_id?.trim();
+  if (!winnerId) return null;
+
+  const p1 = match.player1_id?.trim() || null;
+  const p2 = match.player2_id?.trim() || null;
+  const loserId = winnerId === p1 ? p2 : p1;
+
+  const setScores = (match.sets ?? [])
+    .map((s, i) => ({
+      set: i + 1,
+      competitor1: s.player1 ?? 0,
+      competitor2: s.player2 ?? 0,
+    }))
+    .filter((s) => s.competitor1 > 0 || s.competitor2 > 0);
+
+  const special =
+    match.status === "retired" ||
+    match.status === "walkover" ||
+    match.status === "disqualified"
+      ? resultTypeFromStatus(match.status)
+      : null;
+
+  if (special && special !== "normal") {
+    return {
+      winnerId,
+      loserId: loserId || undefined,
+      resultType: special,
+      setScores: setScores.length ? setScores : undefined,
+    };
+  }
+
+  // API requires setsPlayer1/setsPlayer2 for normal results. Derive from set
+  // games when present; otherwise use a 2–0 placeholder so the draw can advance
+  // without forcing the analyst to type scores first.
+  let setsPlayer1 = 0;
+  let setsPlayer2 = 0;
+  if (setScores.length > 0) {
+    for (const score of setScores) {
+      if (score.competitor1 === score.competitor2) continue;
+      if (score.competitor1 > score.competitor2) setsPlayer1 += 1;
+      else setsPlayer2 += 1;
+    }
+  }
+  if (setsPlayer1 === setsPlayer2) {
+    if (winnerId === p1) {
+      setsPlayer1 = 2;
+      setsPlayer2 = 0;
+    } else {
+      setsPlayer1 = 0;
+      setsPlayer2 = 2;
+    }
+  }
+
+  return {
+    winnerId,
+    loserId: loserId || undefined,
+    resultType: "normal",
+    setsPlayer1,
+    setsPlayer2,
+    setScores: setScores.length ? setScores : undefined,
+  };
+}
+
 export async function saveMatchesBatch(
   editionId: string,
   matches: Array<{
@@ -637,7 +784,7 @@ export async function saveMatchesBatch(
     sets?: Array<{ player1: number | null; player2: number | null }>;
   }>,
   options?: { deleteIds?: string[] },
-): List<TennisMatch> {
+): Promise<{ data: TennisMatch[]; propagated: number }> {
   for (const id of options?.deleteIds ?? []) {
     await deleteEditionMatch(id);
   }
@@ -647,6 +794,12 @@ export async function saveMatchesBatch(
     rounds.map((r) => [`${r.roundNumber}:${r.name}`, r]),
   );
 
+  const pendingResults: Array<{
+    matchId: string;
+    payload: NonNullable<ReturnType<typeof buildResultPayload>>;
+  }> = [];
+
+  // 1) Upsert match shells (competitors + schedule) so bracket links can resolve.
   for (const match of matches) {
     const round = await ensureRound(
       editionId,
@@ -670,7 +823,11 @@ export async function saveMatchesBatch(
       timezone: scheduledAt ? "utc" : null,
       status:
         competitor1Id && competitor2Id
-          ? fromBoMatchStatus(match.status)
+          ? fromBoMatchStatus(
+              match.winner_id && match.status === "scheduled"
+                ? "finished"
+                : match.status,
+            )
           : "pending_competitors",
       winnerToMatchId,
       winnerToPosition:
@@ -698,43 +855,31 @@ export async function saveMatchesBatch(
       matchId = firstOf(created)?.id;
     }
 
-    if (
-      matchId &&
-      match.winner_id &&
-      (match.status === "finished" ||
-        match.status === "retired" ||
-        match.status === "walkover" ||
-        match.status === "disqualified")
-    ) {
-      const loserId =
-        match.winner_id === match.player1_id
-          ? match.player2_id
-          : match.player1_id;
-      const setScores = (match.sets ?? [])
-        .map((s, i) => ({
-          set: i + 1,
-          competitor1: s.player1 ?? 0,
-          competitor2: s.player2 ?? 0,
-        }))
-        .filter((s) => s.competitor1 > 0 || s.competitor2 > 0);
-
-      try {
-        await bffRequest(
-          `${PREFIX}/matches/${encodeURIComponent(matchId)}/result`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              winnerId: match.winner_id,
-              loserId: loserId || undefined,
-              resultType: resultTypeFromStatus(match.status),
-              setScores: setScores.length ? setScores : undefined,
-            }),
-          },
-        );
-      } catch {
-        /* result endpoint may reject incomplete brackets */
-      }
+    const resultPayload = buildResultPayload(match);
+    if (matchId && resultPayload) {
+      pendingResults.push({ matchId, payload: resultPayload });
     }
+  }
+
+  // 2) Wire R→R+1 before results so the API can advanceWinner on /result.
+  await wireBracketLinks(editionId);
+
+  // 3) Persist winners (required for next-round fill).
+  for (const { matchId, payload } of pendingResults) {
+    await bffRequest(
+      `${PREFIX}/matches/${encodeURIComponent(matchId)}/result`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+  }
+
+  // 4) Client-side fill for any slot the API did not advance.
+  let propagated = 0;
+  if (pendingResults.length > 0) {
+    const prop = await propagateWinners(editionId);
+    propagated = prop.data.propagated + prop.data.alreadySet;
   }
 
   // Publishing the edition only covers rounds and entries that already existed.
@@ -742,13 +887,62 @@ export async function saveMatchesBatch(
   try {
     const edition = await getAdminEdition(editionId);
     if (edition.data.publish_status === "published") {
-      await ensurePublished(editionId, "published");
+      await syncPublishStatus(editionId, "published");
     }
   } catch {
     /* keep match writes even if re-publish fails */
   }
 
-  return listEditionMatches(editionId);
+  const listed = await listEditionMatches(editionId);
+  return { data: listed.data, propagated };
+}
+
+/**
+ * Single-elim links: round R slot S → round R+1 slot ceil(S/2).
+ * Odd S → competitor_1, even S → competitor_2.
+ */
+async function wireBracketLinks(editionId: string): Promise<void> {
+  const { data: matches } = await listEditionMatches(editionId);
+  const byRound = new Map<number, TennisMatch[]>();
+  for (const match of matches) {
+    const list = byRound.get(match.round_order) ?? [];
+    list.push(match);
+    byRound.set(match.round_order, list);
+  }
+
+  const roundOrders = [...byRound.keys()].sort((a, b) => a - b);
+  for (const roundOrder of roundOrders) {
+    const nextRound = byRound.get(roundOrder + 1);
+    if (!nextRound?.length) continue;
+
+    const current = [...(byRound.get(roundOrder) ?? [])].sort(
+      (a, b) => a.slot - b.slot,
+    );
+    const nextSorted = [...nextRound].sort((a, b) => a.slot - b.slot);
+
+    for (const match of current) {
+      const nextMatch = nextSorted[Math.ceil(match.slot / 2) - 1];
+      if (!nextMatch) continue;
+      const nextSlot = match.slot % 2 === 1 ? "player1" : "player2";
+      if (
+        match.next_match_id === nextMatch.id &&
+        match.next_slot === nextSlot
+      ) {
+        continue;
+      }
+      await bffRequest(
+        `${PREFIX}/matches/${encodeURIComponent(match.id)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            winnerToMatchId: nextMatch.id,
+            winnerToPosition:
+              nextSlot === "player1" ? "competitor_1" : "competitor_2",
+          }),
+        },
+      );
+    }
+  }
 }
 
 /**
@@ -756,11 +950,15 @@ export async function saveMatchesBatch(
  * `winnerToMatchId` / `winnerToPosition` (no dedicated BFF endpoint).
  */
 export async function propagateWinners(editionId: string): Promise<{
-  data: { propagated: number; matches: TennisMatch[] };
+  data: { propagated: number; alreadySet: number; matches: TennisMatch[] };
 }> {
+  // Ensure R → R+1 links exist before reading winners from the API.
+  await wireBracketLinks(editionId);
+
   const { data: matches } = await listEditionMatches(editionId);
   const byId = new Map(matches.map((m) => [m.id, m]));
   let propagated = 0;
+  let alreadySet = 0;
 
   for (const match of matches) {
     if (!match.winner_id || !match.next_match_id) continue;
@@ -769,10 +967,16 @@ export async function propagateWinners(editionId: string): Promise<{
 
     const patch: Record<string, unknown> = {};
     if (match.next_slot === "player1") {
-      if (next.player1_id === match.winner_id) continue;
+      if (next.player1_id === match.winner_id) {
+        alreadySet += 1;
+        continue;
+      }
       patch.competitor1Id = match.winner_id;
     } else if (match.next_slot === "player2") {
-      if (next.player2_id === match.winner_id) continue;
+      if (next.player2_id === match.winner_id) {
+        alreadySet += 1;
+        continue;
+      }
       patch.competitor2Id = match.winner_id;
     } else {
       // Infer empty slot
@@ -789,10 +993,20 @@ export async function propagateWinners(editionId: string): Promise<{
       },
     );
     propagated += 1;
+    // Keep local map in sync for later sources pointing at the same next match.
+    if (patch.competitor1Id) {
+      byId.set(next.id, { ...next, player1_id: String(patch.competitor1Id) });
+    }
+    if (patch.competitor2Id) {
+      byId.set(next.id, {
+        ...byId.get(next.id)!,
+        player2_id: String(patch.competitor2Id),
+      });
+    }
   }
 
   const refreshed = await listEditionMatches(editionId);
   return {
-    data: { propagated, matches: refreshed.data },
+    data: { propagated, alreadySet, matches: refreshed.data },
   };
 }

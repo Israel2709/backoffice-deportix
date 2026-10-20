@@ -11,6 +11,7 @@ import {
   listAdminPlayers,
   updatePlayer,
 } from "@/lib/api/admin-tennis";
+import { listAdminCountries } from "@/lib/api/admin-soccer";
 import {
   playerDisplayName,
   type TennisPlayer,
@@ -20,6 +21,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Field, TextInput, TextSelect } from "@/components/capture/field";
+import { FilteredSelect } from "@/components/capture/filtered-select";
 import { Note } from "@/components/ui/note";
 
 type PlayerForm = {
@@ -46,7 +48,7 @@ function toForm(player: TennisPlayer): PlayerForm {
   return {
     name: player.name,
     display_name: player.display_name ?? "",
-    country_code: player.country_code ?? "",
+    country_code: (player.country_code ?? "").toUpperCase(),
     country_name: player.country_name ?? "",
     photo_url: player.photo_url ?? "",
     gender: player.gender === "female" ? "female" : "male",
@@ -58,8 +60,45 @@ export function PlayersMasterPanel() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
+  const countriesQuery = useQuery({
+    queryKey: ["admin", "soccer", "countries"],
+    queryFn: listAdminCountries,
+  });
+  const countryOptions = useMemo(() => {
+    const rows = [...(countriesQuery.data?.data ?? [])]
+      .filter((country) => Boolean(country.code?.trim()))
+      .sort((a, b) => a.name.localeCompare(b.name, "es"));
+    return rows.map((country) => ({
+      value: country.code!.trim().toUpperCase(),
+      label: country.name,
+      meta: country.code!.trim().toUpperCase(),
+    }));
+  }, [countriesQuery.data?.data]);
+  const countryNameByCode = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const option of countryOptions) {
+      map.set(option.value, option.label);
+    }
+    return map;
+  }, [countryOptions]);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<PlayerForm>(emptyForm());
+  const formCountryOptions = useMemo(() => {
+    if (
+      !form.country_code ||
+      countryOptions.some((option) => option.value === form.country_code)
+    ) {
+      return countryOptions;
+    }
+    return [
+      ...countryOptions,
+      {
+        value: form.country_code,
+        label: form.country_name || form.country_code,
+        meta: form.country_code,
+      },
+    ];
+  }, [countryOptions, form.country_code, form.country_name]);
 
   const playersQuery = useQuery({
     queryKey: ["admin", "tennis", "players"],
@@ -81,11 +120,14 @@ export function PlayersMasterPanel() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
+      const countryCode = form.country_code.trim().toUpperCase() || null;
       const payload = {
         name: form.name.trim(),
         display_name: form.display_name.trim() || null,
-        country_code: form.country_code.trim() || null,
-        country_name: form.country_name.trim() || null,
+        country_code: countryCode,
+        country_name: countryCode
+          ? (countryNameByCode.get(countryCode) ?? null)
+          : null,
         photo_url: form.photo_url.trim() || null,
         gender: form.gender,
         status: form.status,
@@ -172,8 +214,10 @@ export function PlayersMasterPanel() {
                       : player.gender === "male"
                         ? "ATP"
                         : null,
-                    player.country_name,
-                    player.country_code,
+                    (player.country_code &&
+                      countryNameByCode.get(player.country_code.toUpperCase())) ||
+                      player.country_name ||
+                      player.country_code,
                   ]
                     .filter(Boolean)
                     .join(" · ")}
@@ -236,20 +280,24 @@ export function PlayersMasterPanel() {
               />
             </Field>
             <Field label="País">
-              <TextInput
-                value={form.country_name}
-                onChange={(e) =>
-                  setForm({ ...form, country_name: e.target.value })
-                }
-              />
-            </Field>
-            <Field label="Código país">
-              <TextInput
+              <FilteredSelect
                 value={form.country_code}
-                onChange={(e) =>
-                  setForm({ ...form, country_code: e.target.value })
+                options={formCountryOptions}
+                placeholder={
+                  countriesQuery.isLoading
+                    ? "Cargando países…"
+                    : "Selecciona un país"
                 }
-                placeholder="MEX"
+                searchPlaceholder="Buscar país…"
+                emptyLabel="Ningún país coincide con la búsqueda."
+                disabled={countriesQuery.isLoading}
+                onChange={(country_code) =>
+                  setForm({
+                    ...form,
+                    country_code,
+                    country_name: countryNameByCode.get(country_code) ?? "",
+                  })
+                }
               />
             </Field>
             <Field label="Circuito">

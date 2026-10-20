@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import { cn } from "@/lib/utils";
 
 export function Field({
@@ -25,11 +26,53 @@ export function Field({
 export const inputClassName =
   "rounded-[9px] border border-[#d7dee9] bg-white px-[11px] py-[11px] text-[#253047] outline-none focus:border-dx-blue";
 
-export function TextInput(
-  props: React.InputHTMLAttributes<HTMLInputElement>,
-) {
-  return <input {...props} className={cn(inputClassName, props.className)} />;
-}
+export const TextInput = forwardRef<
+  HTMLInputElement,
+  React.InputHTMLAttributes<HTMLInputElement>
+>(function TextInput(props, ref) {
+  return (
+    <input
+      ref={ref}
+      {...props}
+      className={cn(inputClassName, props.className)}
+    />
+  );
+});
+
+type NumberInputProps = Omit<
+  React.InputHTMLAttributes<HTMLInputElement>,
+  "type" | "value" | "onChange"
+> & {
+  value: number | null | undefined;
+  onChange: (value: number | null) => void;
+};
+
+/**
+ * Controlled number field that allows clearing the input.
+ * Avoids binding `Number("") === 0`, which leaves a sticky zero while typing.
+ */
+export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(
+  function NumberInput({ value, onChange, className, ...props }, ref) {
+    return (
+      <input
+        ref={ref}
+        type="number"
+        {...props}
+        className={cn(inputClassName, className)}
+        value={value == null || Number.isNaN(value) ? "" : value}
+        onChange={(event) => {
+          const raw = event.target.value;
+          if (raw === "" || raw === "-") {
+            onChange(null);
+            return;
+          }
+          const next = Number(raw);
+          onChange(Number.isFinite(next) ? next : null);
+        }}
+      />
+    );
+  },
+);
 
 export function TextSelect(
   props: React.SelectHTMLAttributes<HTMLSelectElement>,

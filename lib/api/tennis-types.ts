@@ -8,6 +8,11 @@ export type TennisEditionStatus =
 
 export type TennisPublishStatus = "draft" | "published";
 
+export type TennisTournamentCategory =
+  | "grand_slam"
+  | "atp_1000"
+  | "wta_1000";
+
 export type TennisMatchBoStatus =
   | "scheduled"
   | "live"
@@ -34,10 +39,19 @@ export interface TennisPlayer {
 export interface TennisEdition {
   id: string;
   tournament_name: string;
+  short_name?: string | null;
+  category: TennisTournamentCategory;
   year: number;
   gender: "ATP" | "WTA";
+  country_code?: string | null;
+  country_name?: string | null;
+  city?: string | null;
+  image_url?: string | null;
+  image_alt_url?: string | null;
   start_date: string | null;
   end_date: string | null;
+  /** Expected main-draw size (cantidad de participantes del cuadro). */
+  participants_count: number | null;
   status: TennisEditionStatus;
   publish_status: TennisPublishStatus;
 }
@@ -90,7 +104,16 @@ export const EDITION_STATUS_LABEL: Record<TennisEditionStatus, string> = {
 
 export const PUBLISH_STATUS_LABEL: Record<TennisPublishStatus, string> = {
   draft: "Borrador",
-  published: "Publicada",
+  published: "Publicado",
+};
+
+export const TOURNAMENT_CATEGORY_LABEL: Record<
+  TennisTournamentCategory,
+  string
+> = {
+  grand_slam: "Grand Slam",
+  atp_1000: "ATP 1000",
+  wta_1000: "WTA 1000",
 };
 
 export const MATCH_STATUS_LABEL: Record<TennisMatchBoStatus, string> = {

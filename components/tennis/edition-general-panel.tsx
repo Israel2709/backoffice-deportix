@@ -21,8 +21,14 @@ import {
 import { useDirtyGuard } from "@/hooks/use-dirty-guard";
 import { KpiGrid } from "@/components/ui/kpi-grid";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { Field, TextInput, TextSelect } from "@/components/capture/field";
+import {
+  Field,
+  NumberInput,
+  TextInput,
+  TextSelect,
+} from "@/components/capture/field";
 import { StickyActions } from "@/components/capture/sticky-actions";
+import { PublishStatusRadio } from "@/components/tennis/publish-status-radio";
 
 function toDateInput(value: string | null | undefined) {
   if (!value) return "";
@@ -44,12 +50,22 @@ export function EditionGeneralPanel({ editionId }: { editionId: string }) {
     queryFn: () => listEditionMatches(editionId),
   });
 
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<{
+    tournament_name: string;
+    year: number | null;
+    gender: "ATP" | "WTA";
+    status: TennisEditionStatus;
+    publish_status: TennisPublishStatus;
+    participants_count: number | null;
+    start_date: string;
+    end_date: string;
+  }>({
     tournament_name: "",
     year: new Date().getFullYear(),
-    gender: "ATP" as "ATP" | "WTA",
-    status: "upcoming" as TennisEditionStatus,
-    publish_status: "draft" as TennisPublishStatus,
+    gender: "ATP",
+    status: "upcoming",
+    publish_status: "published",
+    participants_count: 128,
     start_date: "",
     end_date: "",
   });
@@ -64,6 +80,7 @@ export function EditionGeneralPanel({ editionId }: { editionId: string }) {
       gender: edition.gender,
       status: edition.status,
       publish_status: edition.publish_status,
+      participants_count: edition.participants_count ?? 128,
       start_date: toDateInput(edition.start_date),
       end_date: toDateInput(edition.end_date),
     };
@@ -75,18 +92,21 @@ export function EditionGeneralPanel({ editionId }: { editionId: string }) {
   useDirtyGuard(dirty);
 
   const saveMutation = useMutation({
-    mutationFn: () =>
-      updateEdition(editionId, {
+    mutationFn: () => {
+      if (form.year == null) throw new Error("Indica el año del torneo.");
+      return updateEdition(editionId, {
         tournament_name: form.tournament_name.trim(),
-        year: Number(form.year),
+        year: form.year,
         gender: form.gender,
         status: form.status,
         publish_status: form.publish_status,
+        participants_count: form.participants_count,
         start_date: form.start_date
           ? new Date(form.start_date).toISOString()
           : null,
         end_date: form.end_date ? new Date(form.end_date).toISOString() : null,
-      }),
+      });
+    },
     onSuccess: () => {
       toast.success("Edición actualizada");
       setBaseline(JSON.stringify(form));
@@ -127,7 +147,11 @@ export function EditionGeneralPanel({ editionId }: { editionId: string }) {
             >
               {EDITION_STATUS_LABEL[edition.status]}
             </StatusBadge>
-            <StatusBadge tone="gray">
+            <StatusBadge
+              tone={
+                edition.publish_status === "published" ? "green" : "gray"
+              }
+            >
               {PUBLISH_STATUS_LABEL[edition.publish_status]}
             </StatusBadge>
           </div>
@@ -138,7 +162,13 @@ export function EditionGeneralPanel({ editionId }: { editionId: string }) {
         items={[
           {
             label: "Participantes",
-            value: participantsQuery.data?.data.length ?? "—",
+            value: (() => {
+              const actual = participantsQuery.data?.data.length;
+              const expected = edition?.participants_count;
+              if (actual == null) return "—";
+              if (expected != null) return `${actual}/${expected}`;
+              return actual;
+            })(),
           },
           { label: "Partidos", value: matches.length || "—" },
           { label: "Finalizados", value: finished },
@@ -158,12 +188,9 @@ export function EditionGeneralPanel({ editionId }: { editionId: string }) {
             />
           </Field>
           <Field label="Año">
-            <TextInput
-              type="number"
+            <NumberInput
               value={form.year}
-              onChange={(e) =>
-                setForm({ ...form, year: Number(e.target.value) })
-              }
+              onChange={(year) => setForm({ ...form, year })}
             />
           </Field>
           <Field label="Género">
@@ -196,19 +223,23 @@ export function EditionGeneralPanel({ editionId }: { editionId: string }) {
               <option value="cancelled">Cancelada</option>
             </TextSelect>
           </Field>
-          <Field label="Publicación">
-            <TextSelect
-              value={form.publish_status}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  publish_status: e.target.value as TennisPublishStatus,
-                })
+          <Field label="Cantidad de participantes">
+            <NumberInput
+              min={2}
+              max={256}
+              value={form.participants_count}
+              onChange={(participants_count) =>
+                setForm({ ...form, participants_count })
               }
-            >
-              <option value="draft">Borrador</option>
-              <option value="published">Publicada</option>
-            </TextSelect>
+            />
+          </Field>
+          <Field label="Publicación">
+            <PublishStatusRadio
+              value={form.publish_status}
+              onChange={(publish_status) =>
+                setForm({ ...form, publish_status })
+              }
+            />
           </Field>
           <Field label="Fecha inicio">
             <TextInput

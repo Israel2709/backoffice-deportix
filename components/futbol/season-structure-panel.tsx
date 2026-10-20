@@ -8,7 +8,7 @@ import { listRounds, replaceRounds } from "@/lib/api/admin-soccer";
 import { useDirtyGuard } from "@/hooks/use-dirty-guard";
 import { Button } from "@/components/ui/button";
 import { Note } from "@/components/ui/note";
-import { Field, TextInput } from "@/components/capture/field";
+import { Field, NumberInput, TextInput } from "@/components/capture/field";
 import { StickyActions } from "@/components/capture/sticky-actions";
 
 type RoundRow = {
@@ -22,7 +22,7 @@ export function SeasonStructurePanel({ seasonId }: { seasonId: string }) {
   const [rows, setRows] = useState<RoundRow[]>([]);
   const [baseline, setBaseline] = useState("[]");
   const [phaseName, setPhaseName] = useState("Fase Regular");
-  const [generateCount, setGenerateCount] = useState(17);
+  const [generateCount, setGenerateCount] = useState<number | null>(17);
 
   const roundsQuery = useQuery({
     queryKey: ["admin", "soccer", "rounds", seasonId],
@@ -63,7 +63,12 @@ export function SeasonStructurePanel({ seasonId }: { seasonId: string }) {
   });
 
   function generateJornadas() {
-    const generated = Array.from({ length: generateCount }, (_, i) => ({
+    const count = generateCount ?? 0;
+    if (count < 1) {
+      toast.error("Indica cuántas jornadas generar.");
+      return;
+    }
+    const generated = Array.from({ length: count }, (_, i) => ({
       name: `Jornada ${i + 1}`,
       position: i + 1,
       phase: phaseName || "Fase Regular",
@@ -92,12 +97,11 @@ export function SeasonStructurePanel({ seasonId }: { seasonId: string }) {
             />
           </Field>
           <Field label="Jornadas">
-            <TextInput
-              type="number"
+            <NumberInput
               min={1}
               max={40}
               value={generateCount}
-              onChange={(e) => setGenerateCount(Number(e.target.value))}
+              onChange={setGenerateCount}
               className="w-24"
             />
           </Field>

@@ -17,7 +17,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { LoadingBlock } from "@/components/ui/spinner";
-import { Field, TextInput, TextSelect } from "@/components/capture/field";
+import {
+  Field,
+  NumberInput,
+  TextInput,
+  TextSelect,
+} from "@/components/capture/field";
 import { formatDateDisplay } from "@/lib/format-date";
 
 function statusTone(status?: SeasonStatus) {
@@ -30,10 +35,16 @@ function statusTone(status?: SeasonStatus) {
 export function SeasonsListPanel({ competitionId }: { competitionId: string }) {
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<{
+    name: string;
+    year: number | null;
+    status: SeasonStatus;
+    start_date: string;
+    end_date: string;
+  }>({
     name: "",
     year: new Date().getFullYear(),
-    status: "upcoming" as SeasonStatus,
+    status: "upcoming",
     start_date: "",
     end_date: "",
   });
@@ -48,17 +59,19 @@ export function SeasonsListPanel({ competitionId }: { competitionId: string }) {
   });
 
   const createMutation = useMutation({
-    mutationFn: () =>
-      createF1Season({
+    mutationFn: () => {
+      if (form.year == null) throw new Error("Indica el año.");
+      return createF1Season({
         competition_id: competitionId,
-        year: Number(form.year),
+        year: form.year,
         name: form.name.trim() || null,
         status: form.status,
         start_date: form.start_date
           ? new Date(form.start_date).toISOString()
           : null,
         end_date: form.end_date ? new Date(form.end_date).toISOString() : null,
-      }),
+      });
+    },
     onSuccess: () => {
       toast.success("Temporada creada");
       setShowForm(false);
@@ -153,12 +166,9 @@ export function SeasonsListPanel({ competitionId }: { competitionId: string }) {
               />
             </Field>
             <Field label="Año">
-              <TextInput
-                type="number"
+              <NumberInput
                 value={form.year}
-                onChange={(e) =>
-                  setForm({ ...form, year: Number(e.target.value) })
-                }
+                onChange={(year) => setForm({ ...form, year })}
               />
             </Field>
             <Field label="Estado">

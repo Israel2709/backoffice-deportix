@@ -49,18 +49,32 @@ export function LoadingBlock({
 
 export function LoadingOverlay({
   label = "Cargando…",
+  /** Show an indeterminate progress bar under the label. */
+  progress = false,
 }: {
   label?: string;
+  progress?: boolean;
 }) {
   return (
     <div
       role="status"
       aria-live="polite"
-      className="fixed inset-0 z-[80] flex items-center justify-center bg-white/55 backdrop-blur-[1px]"
+      aria-busy="true"
+      className="fixed inset-0 z-[80] flex cursor-wait items-center justify-center bg-white/60 backdrop-blur-[2px]"
     >
-      <div className="flex items-center gap-3 rounded-2xl border border-dx-line bg-white px-5 py-4 shadow-sm">
-        <Spinner />
-        <span className="text-sm font-semibold text-dx-ink">{label}</span>
+      <div className="flex min-w-[260px] max-w-[90vw] flex-col gap-3 rounded-2xl border border-dx-line bg-white px-5 py-4 shadow-sm">
+        <div className="flex items-center gap-3">
+          <Spinner />
+          <span className="text-sm font-semibold text-dx-ink">{label}</span>
+        </div>
+        {progress ? (
+          <div
+            className="h-1.5 overflow-hidden rounded-full bg-[#e8eef7]"
+            aria-hidden
+          >
+            <div className="h-full w-full animate-pulse rounded-full bg-dx-blue/85" />
+          </div>
+        ) : null}
       </div>
     </div>
   );

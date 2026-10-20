@@ -6,7 +6,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
-import { createEdition, listAdminEditions } from "@/lib/api/admin-tennis";
+import {
+  createEdition,
+  listAdminEditions,
+  updateEdition,
+} from "@/lib/api/admin-tennis";
 import {
   EDITION_STATUS_LABEL,
   editionLabel,
@@ -16,7 +20,13 @@ import {
 } from "@/lib/api/tennis-types";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { Field, TextInput, TextSelect } from "@/components/capture/field";
+import {
+  Field,
+  NumberInput,
+  TextInput,
+  TextSelect,
+} from "@/components/capture/field";
+import { PublishStatusRadio } from "@/components/tennis/publish-status-radio";
 
 function statusTone(status: TennisEditionStatus) {
   if (status === "current") return "green" as const;
@@ -25,15 +35,29 @@ function statusTone(status: TennisEditionStatus) {
   return "gray" as const;
 }
 
+function publishTone(status: TennisPublishStatus) {
+  return status === "published" ? ("green" as const) : ("gray" as const);
+}
+
 export function EditionsListPanel() {
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<{
+    tournament_name: string;
+    year: number | null;
+    gender: "ATP" | "WTA";
+    status: TennisEditionStatus;
+    publish_status: TennisPublishStatus;
+    participants_count: number | null;
+    start_date: string;
+    end_date: string;
+  }>({
     tournament_name: "",
     year: new Date().getFullYear(),
-    gender: "ATP" as "ATP" | "WTA",
-    status: "upcoming" as TennisEditionStatus,
-    publish_status: "draft" as TennisPublishStatus,
+    gender: "ATP",
+    status: "upcoming",
+    publish_status: "published",
+    participants_count: 128,
     start_date: "",
     end_date: "",
   });
@@ -44,21 +68,45 @@ export function EditionsListPanel() {
   });
 
   const createMutation = useMutation({
-    mutationFn: () =>
-      createEdition({
+    mutationFn: () => {
+      if (form.year == null) throw new Error("Indica el año del torneo.");
+      return createEdition({
         tournament_name: form.tournament_name.trim(),
-        year: Number(form.year),
+        year: form.year,
         gender: form.gender,
         status: form.status,
         publish_status: form.publish_status,
+        participants_count: form.participants_count,
         start_date: form.start_date
           ? new Date(form.start_date).toISOString()
           : null,
         end_date: form.end_date ? new Date(form.end_date).toISOString() : null,
-      }),
+      });
+    },
     onSuccess: () => {
       toast.success("Edición creada");
       setShowForm(false);
+      void queryClient.invalidateQueries({
+        queryKey: ["admin", "tennis", "editions"],
+      });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const publishMutation = useMutation({
+    mutationFn: ({
+      id,
+      publish_status,
+    }: {
+      id: string;
+      publish_status: TennisPublishStatus;
+    }) => updateEdition(id, { publish_status }),
+    onSuccess: (_data, variables) => {
+      toast.success(
+        variables.publish_status === "published"
+          ? "Torneo publicado"
+          : "Torneo en borrador",
+      );
       void queryClient.invalidateQueries({
         queryKey: ["admin", "tennis", "editions"],
       });
@@ -96,24 +144,49 @@ export function EditionsListPanel() {
         <>
           <div className="flex flex-col gap-2.5">
             {active.map((edition) => (
-              <Link
+              <div
                 key={edition.id}
-                href={`/operacion/tenis/${edition.id}`}
-                className="flex items-center justify-between gap-4 rounded-[14px] border border-dx-line bg-white px-[17px] py-[15px] hover:border-[#becae0]"
+                className="flex flex-wrap items-center justify-between gap-4 rounded-[14px] border border-dx-line bg-white px-[17px] py-[15px]"
               >
-                <div>
+                <Link
+                  href={`/operacion/tenis/${edition.id}`}
+                  className="min-w-0 flex-1 hover:opacity-90"
+                >
                   <div className="font-bold">{editionLabel(edition)}</div>
-                  <div className="mt-1 text-[13px] text-dx-muted">
-                    {PUBLISH_STATUS_LABEL[edition.publish_status]}
+                  <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                    <StatusBadge tone={statusTone(edition.status)}>
+                      {EDITION_STATUS_LABEL[edition.status]}
+                    </StatusBadge>
+                    <StatusBadge tone={publishTone(edition.publish_status)}>
+                      {PUBLISH_STATUS_LABEL[edition.publish_status]}
+                    </StatusBadge>
                   </div>
-                </div>
+                </Link>
                 <div className="flex items-center gap-3">
-                  <StatusBadge tone={statusTone(edition.status)}>
-                    {EDITION_STATUS_LABEL[edition.status]}
-                  </StatusBadge>
-                  <span className="text-2xl text-[#8090a8]">→</span>
+                  <PublishStatusRadio
+                    compact
+                    name={`publish-${edition.id}`}
+                    disabled={
+                      publishMutation.isPending &&
+                      publishMutation.variables?.id === edition.id
+                    }
+                    value={edition.publish_status}
+                    onChange={(publish_status) =>
+                      publishMutation.mutate({
+                        id: edition.id,
+                        publish_status,
+                      })
+                    }
+                  />
+                  <Link
+                    href={`/operacion/tenis/${edition.id}`}
+                    className="text-2xl text-[#8090a8] hover:text-dx-ink"
+                    aria-label={`Abrir ${editionLabel(edition)}`}
+                  >
+                    →
+                  </Link>
                 </div>
-              </Link>
+              </div>
             ))}
             {active.length === 0 ? (
               <p className="text-sm text-dx-muted">
@@ -129,14 +202,34 @@ export function EditionsListPanel() {
               </summary>
               <div className="mt-3 flex flex-col gap-2">
                 {historic.map((edition) => (
-                  <Link
+                  <div
                     key={edition.id}
-                    href={`/operacion/tenis/${edition.id}`}
-                    className="text-sm text-dx-blue underline"
+                    className="flex flex-wrap items-center justify-between gap-3 border-b border-dx-line py-2 last:border-0"
                   >
-                    {editionLabel(edition)} ·{" "}
-                    {EDITION_STATUS_LABEL[edition.status]}
-                  </Link>
+                    <Link
+                      href={`/operacion/tenis/${edition.id}`}
+                      className="text-sm text-dx-blue underline"
+                    >
+                      {editionLabel(edition)} ·{" "}
+                      {EDITION_STATUS_LABEL[edition.status]} ·{" "}
+                      {PUBLISH_STATUS_LABEL[edition.publish_status]}
+                    </Link>
+                    <PublishStatusRadio
+                      compact
+                      name={`publish-${edition.id}`}
+                      disabled={
+                        publishMutation.isPending &&
+                        publishMutation.variables?.id === edition.id
+                      }
+                      value={edition.publish_status}
+                      onChange={(publish_status) =>
+                        publishMutation.mutate({
+                          id: edition.id,
+                          publish_status,
+                        })
+                      }
+                    />
+                  </div>
                 ))}
               </div>
             </details>
@@ -157,12 +250,9 @@ export function EditionsListPanel() {
               />
             </Field>
             <Field label="Año">
-              <TextInput
-                type="number"
+              <NumberInput
                 value={form.year}
-                onChange={(e) =>
-                  setForm({ ...form, year: Number(e.target.value) })
-                }
+                onChange={(year) => setForm({ ...form, year })}
               />
             </Field>
             <Field label="Género">
@@ -196,18 +286,22 @@ export function EditionsListPanel() {
               </TextSelect>
             </Field>
             <Field label="Publicación">
-              <TextSelect
+              <PublishStatusRadio
                 value={form.publish_status}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    publish_status: e.target.value as TennisPublishStatus,
-                  })
+                onChange={(publish_status) =>
+                  setForm({ ...form, publish_status })
                 }
-              >
-                <option value="draft">Borrador</option>
-                <option value="published">Publicada</option>
-              </TextSelect>
+              />
+            </Field>
+            <Field label="Cantidad de participantes">
+              <NumberInput
+                min={2}
+                max={256}
+                value={form.participants_count}
+                onChange={(participants_count) =>
+                  setForm({ ...form, participants_count })
+                }
+              />
             </Field>
             <Field label="Fecha inicio">
               <TextInput

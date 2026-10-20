@@ -739,6 +739,17 @@ export async function saveMatchesBatch(
     }
   }
 
+  // Publishing the edition only covers matches that already existed. Re-publish so
+  // newly created rounds/matches inherit published=true for App QD consumers.
+  try {
+    const edition = await getAdminEdition(editionId);
+    if (edition.data.publish_status === "published") {
+      await ensurePublished(editionId, "published");
+    }
+  } catch {
+    /* keep match writes even if re-publish fails */
+  }
+
   return listEditionMatches(editionId);
 }
 

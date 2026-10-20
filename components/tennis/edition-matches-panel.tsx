@@ -209,10 +209,12 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
   const saveMutation = useMutation({
     mutationFn: () => {
       const baselineRows = JSON.parse(baseline) as MatchRow[];
-      const currentIds = new Set(rows.map((r) => r.id).filter(Boolean) as string[]);
+      const currentIds = new Set(
+        rows.flatMap((r) => (r.id ? [r.id] : [])),
+      );
       const deleteIds = baselineRows
-        .map((r) => r.id)
-        .filter((id): id is string => Boolean(id) && !currentIds.has(id));
+        .flatMap((r) => (r.id ? [r.id] : []))
+        .filter((id) => !currentIds.has(id));
       const dirtyRows = rows.filter((row) => isRowDirty(row, baselineRows));
       if (dirtyRows.length === 0 && deleteIds.length === 0) {
         return listEditionMatches(editionId);

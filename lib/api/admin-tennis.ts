@@ -1,7 +1,8 @@
 /**
  * Tennis admin API — Deportix MVP BFF via `/api/proxy`.
  * Paths under `/tennis/*`. Envelope `{ response }` unwrapped by `bffRequest`.
- * Editions → tournaments, participants → entries. Lists use `published=all`.
+ * Editions → tournaments, participants → entries. Catalog lists use `published=all`.
+ * Individual matches have no `published` flag and are listed without that filter.
  */
 import { bffRequest } from "./bff-client";
 import type { ApiListResponse } from "./types";
@@ -104,7 +105,6 @@ type BffMatch = {
       competitor2: number;
     }> | null;
   } | null;
-  published: boolean;
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -609,9 +609,7 @@ export async function listEditionMatches(
   editionId: string,
 ): List<TennisMatch> {
   const response = await bffRequest<BffMatch[]>(
-    withPublished(
-      `${PREFIX}/tournaments/${encodeURIComponent(editionId)}/matches`,
-    ),
+    `${PREFIX}/tournaments/${encodeURIComponent(editionId)}/matches`,
   );
   return { data: asList(response).map(mapMatch) };
 }
@@ -739,8 +737,8 @@ export async function saveMatchesBatch(
     }
   }
 
-  // Publishing the edition only covers matches that already existed. Re-publish so
-  // newly created rounds/matches inherit published=true for App QD consumers.
+  // Publishing the edition only covers rounds and entries that already existed.
+  // Re-publish so newly created rounds inherit published=true for App QD.
   try {
     const edition = await getAdminEdition(editionId);
     if (edition.data.publish_status === "published") {

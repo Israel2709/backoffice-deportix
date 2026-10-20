@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
+  getAdminEdition,
   listAdminPlayers,
   listEditionMatches,
   propagateWinners,
@@ -13,7 +14,9 @@ import {
 import {
   MATCH_STATUS_LABEL,
   playerDisplayName,
+  playerGenderForEdition,
   type TennisMatchBoStatus,
+  type TennisPlayer,
 } from "@/lib/api/tennis-types";
 import { useDirtyGuard } from "@/hooks/use-dirty-guard";
 import { Button } from "@/components/ui/button";
@@ -107,6 +110,29 @@ function rowToPayload(row: MatchRow) {
   };
 }
 
+/** Reassigns slot 1..n within each round, keeping relative order by current slot. */
+function renumberSlotsByRound(rows: MatchRow[]): MatchRow[] {
+  const next = rows.map((row) => ({ ...row }));
+  const roundOrders = [...new Set(next.map((r) => r.round_order))];
+  for (const roundOrder of roundOrders) {
+    const indices = next
+      .map((r, i) => ({ r, i }))
+      .filter(({ r }) => r.round_order === roundOrder)
+      .sort((a, b) => a.r.slot - b.r.slot || a.i - b.i);
+    indices.forEach(({ i }, seq) => {
+      next[i] = { ...next[i], slot: seq + 1 };
+    });
+  }
+  return next;
+}
+
+function isRowDirty(row: MatchRow, baselineRows: MatchRow[]): boolean {
+  if (!row.id) return true;
+  const base = baselineRows.find((b) => b.id === row.id);
+  if (!base) return true;
+  return JSON.stringify(rowToPayload(row)) !== JSON.stringify(rowToPayload(base));
+}
+
 const inputClass =
   "w-full min-w-0 rounded-[7px] border border-[#d9e0ea] bg-white px-2 py-1.5 text-[13px]";
 
@@ -119,6 +145,13 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
     queryKey: ["admin", "tennis", "matches", editionId],
     queryFn: () => listEditionMatches(editionId),
   });
+  const editionQuery = useQuery({
+    queryKey: ["admin", "tennis", "edition", editionId],
+    queryFn: () => getAdminEdition(editionId),
+  });
+  const genderFilter = playerGenderForEdition(
+    editionQuery.data?.data.gender ?? "ATP",
+  );
   const playersQuery = useQuery({
     queryKey: ["admin", "tennis", "players"],
     queryFn: () => listAdminPlayers(),
@@ -128,6 +161,41 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
     () => new Map((playersQuery.data?.data ?? []).map((p) => [p.id, p])),
     [playersQuery.data],
   );
+
+  const selectablePlayers = useMemo(() => {
+    const list = playersQuery.data?.data ?? [];
+    return list.filter(
+      (p) => p.status === "active" && p.gender === genderFilter,
+    );
+  }, [playersQuery.data, genderFilter]);
+
+  function playersForSelect(
+    selectedId: string,
+    rowIndex: number,
+    otherIdInMatch: string,
+  ): TennisPlayer[] {
+    const usedElsewhere = new Set(
+      rows.flatMap((r, i) =>
+        i === rowIndex ? [] : [r.player1_id, r.player2_id].filter(Boolean),
+      ),
+    );
+
+    const available = selectablePlayers.filter((p) => {
+      if (p.id === selectedId) return true;
+      if (otherIdInMatch && p.id === otherIdInMatch) return false;
+      return !usedElsewhere.has(p.id);
+    });
+
+    if (
+      selectedId &&
+      !available.some((p) => p.id === selectedId) &&
+      !selectablePlayers.some((p) => p.id === selectedId)
+    ) {
+      const selected = playersById.get(selectedId);
+      if (selected) return [selected, ...available];
+    }
+    return available;
+  }
 
   useEffect(() => {
     const next = toRows(matchesQuery.data?.data ?? []);
@@ -139,11 +207,22 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
   useDirtyGuard(dirty);
 
   const saveMutation = useMutation({
-    mutationFn: () =>
-      saveMatchesBatch(
+    mutationFn: () => {
+      const baselineRows = JSON.parse(baseline) as MatchRow[];
+      const currentIds = new Set(rows.map((r) => r.id).filter(Boolean) as string[]);
+      const deleteIds = baselineRows
+        .map((r) => r.id)
+        .filter((id): id is string => Boolean(id) && !currentIds.has(id));
+      const dirtyRows = rows.filter((row) => isRowDirty(row, baselineRows));
+      if (dirtyRows.length === 0 && deleteIds.length === 0) {
+        return listEditionMatches(editionId);
+      }
+      return saveMatchesBatch(
         editionId,
-        rows.map((row) => rowToPayload(row)),
-      ),
+        dirtyRows.map((row) => rowToPayload(row)),
+        { deleteIds },
+      );
+    },
     onSuccess: (result) => {
       toast.success("Partidos guardados");
       const next = toRows(result.data);
@@ -168,35 +247,59 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
   });
 
   function updateRow(index: number, patch: Partial<MatchRow>) {
-    setRows((prev) =>
-      prev.map((row, i) => (i === index ? { ...row, ...patch } : row)),
-    );
+    setRows((prev) => {
+      const next = prev.map((row, i) =>
+        i === index ? { ...row, ...patch } : row,
+      );
+      if (patch.round_order !== undefined) {
+        return renumberSlotsByRound(next);
+      }
+      // Clear winner if it no longer matches either competitor.
+      if (patch.player1_id !== undefined || patch.player2_id !== undefined) {
+        const row = next[index];
+        if (
+          row.winner_id &&
+          row.winner_id !== row.player1_id &&
+          row.winner_id !== row.player2_id
+        ) {
+          next[index] = { ...row, winner_id: "" };
+        }
+      }
+      return next;
+    });
   }
 
   function addRow() {
     const maxRound = rows.reduce((m, r) => Math.max(m, r.round_order), 0);
-    setRows((prev) => [
-      ...prev,
-      {
-        round_name: "Ronda",
-        round_order: maxRound || 1,
-        slot: prev.filter((r) => r.round_order === (maxRound || 1)).length + 1,
-        player1_id: "",
-        player2_id: "",
-        winner_id: "",
-        next_match_id: "",
-        next_slot: "",
-        fixture_date: "",
-        fixture_time: "",
-        status: "scheduled",
-        set1_p1: "",
-        set1_p2: "",
-        set2_p1: "",
-        set2_p2: "",
-        set3_p1: "",
-        set3_p2: "",
-      },
-    ]);
+    const roundOrder = maxRound || 1;
+    setRows((prev) =>
+      renumberSlotsByRound([
+        ...prev,
+        {
+          round_name: "Ronda",
+          round_order: roundOrder,
+          slot: Number.MAX_SAFE_INTEGER,
+          player1_id: "",
+          player2_id: "",
+          winner_id: "",
+          next_match_id: "",
+          next_slot: "",
+          fixture_date: "",
+          fixture_time: "",
+          status: "scheduled",
+          set1_p1: "",
+          set1_p2: "",
+          set2_p1: "",
+          set2_p2: "",
+          set3_p1: "",
+          set3_p2: "",
+        },
+      ]),
+    );
+  }
+
+  function removeRow(index: number) {
+    setRows((prev) => renumberSlotsByRound(prev.filter((_, i) => i !== index)));
   }
 
   if (matchesQuery.isLoading) {
@@ -265,14 +368,9 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
                   />
                 </td>
                 <td className="border-b border-dx-line px-2 py-2">
-                  <TextInput
-                    type="number"
-                    className={cn(inputClass, "max-w-[56px]")}
-                    value={row.slot}
-                    onChange={(e) =>
-                      updateRow(index, { slot: Number(e.target.value) || 0 })
-                    }
-                  />
+                  <span className="inline-flex min-w-[56px] px-2 py-1.5 text-[13px] text-[#344054]">
+                    {row.slot}
+                  </span>
                 </td>
                 <td className="border-b border-dx-line px-2 py-2">
                   <TextSelect
@@ -282,11 +380,13 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
                     }
                   >
                     <option value="">—</option>
-                    {(playersQuery.data?.data ?? []).map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {playerDisplayName(p)}
-                      </option>
-                    ))}
+                    {playersForSelect(row.player1_id, index, row.player2_id).map(
+                      (p) => (
+                        <option key={p.id} value={p.id}>
+                          {playerDisplayName(p)}
+                        </option>
+                      ),
+                    )}
                   </TextSelect>
                 </td>
                 <td className="border-b border-dx-line px-2 py-2">
@@ -297,11 +397,13 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
                     }
                   >
                     <option value="">—</option>
-                    {(playersQuery.data?.data ?? []).map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {playerDisplayName(p)}
-                      </option>
-                    ))}
+                    {playersForSelect(row.player2_id, index, row.player1_id).map(
+                      (p) => (
+                        <option key={p.id} value={p.id}>
+                          {playerDisplayName(p)}
+                        </option>
+                      ),
+                    )}
                   </TextSelect>
                 </td>
                 <td className="border-b border-dx-line px-2 py-2">
@@ -394,12 +496,7 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
                   </div>
                 </td>
                 <td className="border-b border-dx-line px-2 py-2">
-                  <Button
-                    variant="ghost"
-                    onClick={() =>
-                      setRows((prev) => prev.filter((_, i) => i !== index))
-                    }
-                  >
+                  <Button variant="ghost" onClick={() => removeRow(index)}>
                     Quitar
                   </Button>
                 </td>

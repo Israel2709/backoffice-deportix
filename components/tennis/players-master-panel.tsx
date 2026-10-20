@@ -14,6 +14,7 @@ import {
 import {
   playerDisplayName,
   type TennisPlayer,
+  type TennisPlayerGender,
   type TennisPlayerStatus,
 } from "@/lib/api/tennis-types";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,7 @@ type PlayerForm = {
   country_code: string;
   country_name: string;
   photo_url: string;
+  gender: TennisPlayerGender;
   status: TennisPlayerStatus;
 };
 
@@ -36,6 +38,7 @@ const emptyForm = (): PlayerForm => ({
   country_code: "",
   country_name: "",
   photo_url: "",
+  gender: "male",
   status: "active",
 });
 
@@ -46,6 +49,7 @@ function toForm(player: TennisPlayer): PlayerForm {
     country_code: player.country_code ?? "",
     country_name: player.country_name ?? "",
     photo_url: player.photo_url ?? "",
+    gender: player.gender === "female" ? "female" : "male",
     status: player.status,
   };
 }
@@ -83,6 +87,7 @@ export function PlayersMasterPanel() {
         country_code: form.country_code.trim() || null,
         country_name: form.country_name.trim() || null,
         photo_url: form.photo_url.trim() || null,
+        gender: form.gender,
         status: form.status,
       };
       if (editingId) return updatePlayer(editingId, payload);
@@ -161,7 +166,15 @@ export function PlayersMasterPanel() {
                   {playerDisplayName(player)}
                 </h3>
                 <div className="mt-1 text-[13px] text-dx-muted">
-                  {[player.country_name, player.country_code]
+                  {[
+                    player.gender === "female"
+                      ? "WTA"
+                      : player.gender === "male"
+                        ? "ATP"
+                        : null,
+                    player.country_name,
+                    player.country_code,
+                  ]
                     .filter(Boolean)
                     .join(" · ")}
                 </div>
@@ -238,6 +251,20 @@ export function PlayersMasterPanel() {
                 }
                 placeholder="MEX"
               />
+            </Field>
+            <Field label="Circuito">
+              <TextSelect
+                value={form.gender}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    gender: e.target.value as TennisPlayerGender,
+                  })
+                }
+              >
+                <option value="male">ATP (varonil)</option>
+                <option value="female">WTA (femenil)</option>
+              </TextSelect>
             </Field>
             <Field label="Estado">
               <TextSelect

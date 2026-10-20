@@ -5,11 +5,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
+  getAdminEdition,
   listAdminPlayers,
   listEditionParticipants,
   replaceEditionParticipants,
 } from "@/lib/api/admin-tennis";
-import { playerDisplayName } from "@/lib/api/tennis-types";
+import {
+  playerDisplayName,
+  playerGenderForEdition,
+} from "@/lib/api/tennis-types";
 import { useDirtyGuard } from "@/hooks/use-dirty-guard";
 import { Button } from "@/components/ui/button";
 import { Note } from "@/components/ui/note";
@@ -31,6 +35,10 @@ export function EditionParticipantsPanel({
   const participantsQuery = useQuery({
     queryKey: ["admin", "tennis", "participants", editionId],
     queryFn: () => listEditionParticipants(editionId),
+  });
+  const editionQuery = useQuery({
+    queryKey: ["admin", "tennis", "edition", editionId],
+    queryFn: () => getAdminEdition(editionId),
   });
   const playersQuery = useQuery({
     queryKey: ["admin", "tennis", "players"],
@@ -54,9 +62,15 @@ export function EditionParticipantsPanel({
     [playersQuery.data],
   );
 
+  const genderFilter = playerGenderForEdition(
+    editionQuery.data?.data.gender ?? "ATP",
+  );
   const usedIds = new Set(rows.map((r) => r.player_id));
   const available = (playersQuery.data?.data ?? []).filter(
-    (p) => !usedIds.has(p.id) && p.status === "active",
+    (p) =>
+      !usedIds.has(p.id) &&
+      p.status === "active" &&
+      p.gender === genderFilter,
   );
 
   const saveMutation = useMutation({

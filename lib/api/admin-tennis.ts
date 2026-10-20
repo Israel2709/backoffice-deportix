@@ -37,6 +37,7 @@ type BffPlayer = {
   displayName: string;
   photoUrl?: string | null;
   country: { code: string; name?: string | null; flag?: string | null };
+  gender?: "male" | "female" | null;
   published: boolean;
 };
 
@@ -122,24 +123,16 @@ function withPublished(path: string): string {
   return `${path}${sep}published=${BO_PUBLISHED}`;
 }
 
-function toUiGender(
-  gender: "male" | "female",
-  category?: string,
-): "ATP" | "WTA" | "mixed" {
-  if (category === "grand_slam" && gender === "male") return "mixed";
+function toUiGender(gender: "male" | "female"): "ATP" | "WTA" {
   return gender === "female" ? "WTA" : "ATP";
 }
 
-function fromUiGender(gender: "ATP" | "WTA" | "mixed"): "male" | "female" {
+function fromUiGender(gender: "ATP" | "WTA"): "male" | "female" {
   return gender === "WTA" ? "female" : "male";
 }
 
-function categoryFromGender(
-  gender: "ATP" | "WTA" | "mixed",
-): "grand_slam" | "atp_1000" | "wta_1000" {
-  if (gender === "WTA") return "wta_1000";
-  if (gender === "mixed") return "grand_slam";
-  return "atp_1000";
+function categoryFromGender(gender: "ATP" | "WTA"): "atp_1000" | "wta_1000" {
+  return gender === "WTA" ? "wta_1000" : "atp_1000";
 }
 
 function toUiStatus(
@@ -240,6 +233,7 @@ function mapPlayer(p: BffPlayer): TennisPlayer {
     country_code: p.country?.code ?? null,
     country_name: p.country?.name ?? null,
     photo_url: p.photoUrl ?? null,
+    gender: p.gender === "male" || p.gender === "female" ? p.gender : null,
     status: p.published ? "active" : "inactive",
   };
 }
@@ -249,7 +243,7 @@ function mapEdition(t: BffTournament): TennisEdition {
     id: String(t.id),
     tournament_name: t.name,
     year: t.year,
-    gender: toUiGender(t.gender, t.category),
+    gender: toUiGender(t.gender),
     start_date: t.startDate ?? null,
     end_date: t.endDate ?? null,
     status: toUiStatus(t.status),
@@ -353,10 +347,12 @@ async function ensureRound(
 
 export async function listAdminPlayers(
   status?: TennisPlayerStatus,
+  gender?: "male" | "female",
 ): List<TennisPlayer> {
-  const response = await bffRequest<BffPlayer[]>(
-    withPublished(`${PREFIX}/players`),
-  );
+  const path = gender
+    ? withPublished(`${PREFIX}/players?gender=${gender}`)
+    : withPublished(`${PREFIX}/players`);
+  const response = await bffRequest<BffPlayer[]>(path);
   let data = asList(response).map(mapPlayer);
   if (status) {
     data = data.filter((p) => p.status === status);
@@ -370,6 +366,7 @@ export async function createPlayer(body: {
   country_code?: string | null;
   country_name?: string | null;
   photo_url?: string | null;
+  gender: "male" | "female";
   status?: TennisPlayerStatus;
 }): One<TennisPlayer> {
   const response = await bffRequest<BffPlayer[] | BffPlayer>(
@@ -381,6 +378,7 @@ export async function createPlayer(body: {
         displayName: body.display_name?.trim() || body.name,
         photoUrl: body.photo_url ?? null,
         countryCode: body.country_code?.trim() || "XX",
+        gender: body.gender,
         published: body.status !== "inactive",
       }),
     },
@@ -398,6 +396,7 @@ export async function updatePlayer(
     country_code: string | null;
     country_name: string | null;
     photo_url: string | null;
+    gender: "male" | "female";
     status: TennisPlayerStatus;
   }>,
 ): One<TennisPlayer> {
@@ -410,6 +409,7 @@ export async function updatePlayer(
   if (body.country_code !== undefined) {
     patch.countryCode = body.country_code || "XX";
   }
+  if (body.gender !== undefined) patch.gender = body.gender;
   if (body.status !== undefined) {
     patch.published = body.status !== "inactive";
   }
@@ -456,7 +456,7 @@ export async function getAdminEdition(id: string): One<TennisEdition> {
 export async function createEdition(body: {
   tournament_name: string;
   year: number;
-  gender: "ATP" | "WTA" | "mixed";
+  gender: "ATP" | "WTA";
   start_date?: string | null;
   end_date?: string | null;
   status?: TennisEditionStatus;
@@ -494,7 +494,7 @@ export async function updateEdition(
   body: Partial<{
     tournament_name: string;
     year: number;
-    gender: "ATP" | "WTA" | "mixed";
+    gender: "ATP" | "WTA";
     start_date: string | null;
     end_date: string | null;
     status: TennisEditionStatus;
@@ -509,8 +509,8 @@ export async function updateEdition(
   if (body.tournament_name !== undefined) patch.name = body.tournament_name;
   if (body.year !== undefined) patch.year = body.year;
   if (body.gender !== undefined) {
+    // Only flip gender; keep existing category (e.g. grand_slam).
     patch.gender = fromUiGender(body.gender);
-    patch.category = categoryFromGender(body.gender);
   }
   if (body.start_date !== undefined) {
     patch.startDate = dateOnly(body.start_date, year);
@@ -616,6 +616,12 @@ export async function listEditionMatches(
   return { data: asList(response).map(mapMatch) };
 }
 
+export async function deleteEditionMatch(matchId: string): Promise<void> {
+  await bffRequest(`${PREFIX}/matches/${encodeURIComponent(matchId)}`, {
+    method: "DELETE",
+  });
+}
+
 export async function saveMatchesBatch(
   editionId: string,
   matches: Array<{
@@ -632,7 +638,12 @@ export async function saveMatchesBatch(
     status: TennisMatchBoStatus;
     sets?: Array<{ player1: number | null; player2: number | null }>;
   }>,
+  options?: { deleteIds?: string[] },
 ): List<TennisMatch> {
+  for (const id of options?.deleteIds ?? []) {
+    await deleteEditionMatch(id);
+  }
+
   const rounds = await listRounds(editionId);
   const roundCache = new Map(
     rounds.map((r) => [`${r.roundNumber}:${r.name}`, r]),
@@ -646,14 +657,24 @@ export async function saveMatchesBatch(
       roundCache,
     );
 
+    const scheduledAt = match.fixture_date || null;
+    const competitor1Id = match.player1_id?.trim() || null;
+    const competitor2Id = match.player2_id?.trim() || null;
+    const winnerToMatchId = match.next_match_id?.trim() || null;
+
     const body = {
       roundId: round.id,
       bracketPosition: match.slot,
-      competitor1Id: match.player1_id || null,
-      competitor2Id: match.player2_id || null,
-      scheduledAt: match.fixture_date || null,
-      status: fromBoMatchStatus(match.status),
-      winnerToMatchId: match.next_match_id || null,
+      competitor1Id,
+      competitor2Id,
+      scheduledAt,
+      // BFF requires timezone whenever scheduledAt is set.
+      timezone: scheduledAt ? "utc" : null,
+      status:
+        competitor1Id && competitor2Id
+          ? fromBoMatchStatus(match.status)
+          : "pending_competitors",
+      winnerToMatchId,
       winnerToPosition:
         match.next_slot === "player1"
           ? "competitor_1"

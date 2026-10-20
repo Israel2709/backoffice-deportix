@@ -31,7 +31,7 @@ export function EditionsListPanel() {
   const [form, setForm] = useState({
     tournament_name: "",
     year: new Date().getFullYear(),
-    gender: "ATP" as "ATP" | "WTA" | "mixed",
+    gender: "ATP" as "ATP" | "WTA",
     status: "upcoming" as TennisEditionStatus,
     publish_status: "draft" as TennisPublishStatus,
     start_date: "",
@@ -171,13 +171,12 @@ export function EditionsListPanel() {
                 onChange={(e) =>
                   setForm({
                     ...form,
-                    gender: e.target.value as "ATP" | "WTA" | "mixed",
+                    gender: e.target.value as "ATP" | "WTA",
                   })
                 }
               >
-                <option value="ATP">ATP</option>
-                <option value="WTA">WTA</option>
-                <option value="mixed">Mixed</option>
+                <option value="ATP">ATP (varonil)</option>
+                <option value="WTA">WTA (femenil)</option>
               </TextSelect>
             </Field>
             <Field label="Estado">

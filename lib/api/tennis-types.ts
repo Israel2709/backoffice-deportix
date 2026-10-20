@@ -17,6 +17,8 @@ export type TennisMatchBoStatus =
   | "disqualified"
   | "cancelled";
 
+export type TennisPlayerGender = "male" | "female";
+
 export interface TennisPlayer {
   id: string;
   name: string;
@@ -24,6 +26,7 @@ export interface TennisPlayer {
   country_code?: string | null;
   country_name?: string | null;
   photo_url?: string | null;
+  gender?: TennisPlayerGender | null;
   status: TennisPlayerStatus;
 }
 
@@ -32,11 +35,18 @@ export interface TennisEdition {
   id: string;
   tournament_name: string;
   year: number;
-  gender: "ATP" | "WTA" | "mixed";
+  gender: "ATP" | "WTA";
   start_date: string | null;
   end_date: string | null;
   status: TennisEditionStatus;
   publish_status: TennisPublishStatus;
+}
+
+/** Maps edition circuit (ATP/WTA) to player gender filter. */
+export function playerGenderForEdition(
+  editionGender: TennisEdition["gender"],
+): TennisPlayerGender {
+  return editionGender === "WTA" ? "female" : "male";
 }
 
 /** Participant maps to BFF `/tennis/entries`. */

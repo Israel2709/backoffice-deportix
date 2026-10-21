@@ -87,8 +87,29 @@ export interface TennisMatch {
   sets: Array<{ player1: number | null; player2: number | null }>;
 }
 
+/**
+ * Short label for tables and selectors: `{apellido} {inicial}.`
+ * Uses the first token of `name` as given name and the rest as surname
+ * (e.g. "Carlos Alcaraz" → "Alcaraz C.", "Max Alcala Gurri" → "Alcala Gurri M.").
+ */
 export function playerDisplayName(player: TennisPlayer): string {
-  return player.display_name?.trim() || player.name?.trim() || "Sin nombre";
+  const full = player.name?.trim() || "";
+  const display = player.display_name?.trim() || "";
+
+  if (full) {
+    const parts = full.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+      const given = parts[0]!;
+      const surname = parts.slice(1).join(" ");
+      return `${surname} ${given.charAt(0).toUpperCase()}.`;
+    }
+    if (display && display.toLowerCase() !== full.toLowerCase()) {
+      return `${display} ${full.charAt(0).toUpperCase()}.`;
+    }
+    return full;
+  }
+
+  return display || "Sin nombre";
 }
 
 export function editionLabel(edition: TennisEdition): string {

@@ -38,3 +38,31 @@ export function buildDrawRounds(participants: number): DrawRound[] {
 
   return rounds;
 }
+
+/**
+ * Prefer the configured draw size; otherwise derive from enrolled players or
+ * from first-round match slots already on the board.
+ */
+export function resolveDrawParticipants(input: {
+  configured?: number | null;
+  enrolledCount?: number | null;
+  firstRoundMatchCount?: number | null;
+}): number | null {
+  const configured = input.configured;
+  if (typeof configured === "number" && Number.isFinite(configured) && configured >= 2) {
+    return configured;
+  }
+  const enrolled = input.enrolledCount;
+  if (typeof enrolled === "number" && Number.isFinite(enrolled) && enrolled >= 2) {
+    return enrolled;
+  }
+  const firstRound = input.firstRoundMatchCount;
+  if (
+    typeof firstRound === "number" &&
+    Number.isFinite(firstRound) &&
+    firstRound >= 1
+  ) {
+    return firstRound * 2;
+  }
+  return null;
+}

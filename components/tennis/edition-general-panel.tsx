@@ -74,19 +74,25 @@ export function EditionGeneralPanel({ editionId }: { editionId: string }) {
   useEffect(() => {
     const edition = editionQuery.data?.data;
     if (!edition) return;
+    if (participantsQuery.isLoading) return;
+    const enrolled = participantsQuery.data?.data.length ?? 0;
+    // If drawSize was never saved, show enrolled count (not a fake default that
+    // looks persisted). Matches panel also heals drawSize from the same source.
+    const shownCount =
+      edition.participants_count ?? (enrolled >= 2 ? enrolled : null);
     const next = {
       tournament_name: edition.tournament_name,
       year: edition.year,
       gender: edition.gender,
       status: edition.status,
       publish_status: edition.publish_status,
-      participants_count: edition.participants_count ?? 128,
+      participants_count: shownCount,
       start_date: toDateInput(edition.start_date),
       end_date: toDateInput(edition.end_date),
     };
     setForm(next);
     setBaseline(JSON.stringify(next));
-  }, [editionQuery.data]);
+  }, [editionQuery.data, participantsQuery.data, participantsQuery.isLoading]);
 
   const dirty = JSON.stringify(form) !== baseline;
   useDirtyGuard(dirty);

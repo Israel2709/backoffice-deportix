@@ -10,6 +10,7 @@ import {
   listEditionMatches,
   listEditionParticipants,
   saveMatchesBatch,
+  updateEdition,
 } from "@/lib/api/admin-tennis";
 import {
   MATCH_STATUS_LABEL,
@@ -25,6 +26,7 @@ import { TextInput, TextSelect } from "@/components/capture/field";
 import { cn } from "@/lib/utils";
 import {
   buildDrawRounds,
+  resolveDrawParticipants,
   type DrawRound,
 } from "@/lib/tennis/draw-rounds";
 import { combineUtcDateTime, splitUtcDateTime } from "@/lib/format-date";
@@ -261,8 +263,28 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
     queryFn: () => listAdminPlayers(),
   });
 
-  const participantsCount =
-    editionQuery.data?.data.participants_count ?? null;
+  const enrolledCount = participantsQuery.data?.data.length ?? 0;
+  const firstRoundMatchCount = useMemo(() => {
+    const fromApi = (matchesQuery.data?.data ?? []).filter(
+      (m) => (m.round_order ?? 0) === 1,
+    ).length;
+    if (fromApi > 0) return fromApi;
+    return rows.filter((r) => (r.round_order ?? 0) === 1).length;
+  }, [matchesQuery.data, rows]);
+
+  const participantsCount = useMemo(
+    () =>
+      resolveDrawParticipants({
+        configured: editionQuery.data?.data.participants_count,
+        enrolledCount,
+        firstRoundMatchCount,
+      }),
+    [
+      editionQuery.data?.data.participants_count,
+      enrolledCount,
+      firstRoundMatchCount,
+    ],
+  );
 
   const drawRounds = useMemo(
     () =>
@@ -271,6 +293,38 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
         : [],
     [participantsCount],
   );
+
+  // Persist draw size when the tournament has entries/matches but drawSize was never saved.
+  useEffect(() => {
+    const configured = editionQuery.data?.data.participants_count;
+    if (configured != null && configured >= 2) return;
+    if (participantsCount == null || participantsCount < 2) return;
+    if (editionQuery.isFetching || editionQuery.isLoading) return;
+
+    let cancelled = false;
+    void updateEdition(editionId, {
+      participants_count: participantsCount,
+    })
+      .then(() => {
+        if (cancelled) return;
+        void queryClient.invalidateQueries({
+          queryKey: ["admin", "tennis", "edition", editionId],
+        });
+      })
+      .catch(() => {
+        /* keep UI tabs even if heal fails */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    editionId,
+    editionQuery.data?.data.participants_count,
+    editionQuery.isFetching,
+    editionQuery.isLoading,
+    participantsCount,
+    queryClient,
+  ]);
 
   const playersById = useMemo(
     () => new Map((playersQuery.data?.data ?? []).map((p) => [p.id, p])),
@@ -324,7 +378,13 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
     if (editionQuery.isLoading) return;
 
     const loaded = toRows(matchesQuery.data.data ?? []);
-    const participants = editionQuery.data?.data.participants_count;
+    const enrolled = participantsQuery.data?.data.length ?? 0;
+    const firstRound = loaded.filter((r) => (r.round_order ?? 0) === 1).length;
+    const participants = resolveDrawParticipants({
+      configured: editionQuery.data?.data.participants_count,
+      enrolledCount: enrolled,
+      firstRoundMatchCount: firstRound,
+    });
     const next =
       participants != null && participants >= 2
         ? ensureBracketRows(loaded, participants)
@@ -332,7 +392,12 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
     setRows(next);
     // Baseline must match what the UI shows (including empty bracket shells).
     setBaseline(JSON.stringify(next));
-  }, [matchesQuery.data, editionQuery.data, editionQuery.isLoading]);
+  }, [
+    matchesQuery.data,
+    editionQuery.data,
+    editionQuery.isLoading,
+    participantsQuery.data,
+  ]);
 
   useEffect(() => {
     if (drawRounds.length === 0) return;
@@ -361,7 +426,12 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
     matches: Awaited<ReturnType<typeof listEditionMatches>>["data"],
   ) {
     const loaded = toRows(matches);
-    const participants = editionQuery.data?.data.participants_count;
+    const participants = resolveDrawParticipants({
+      configured: editionQuery.data?.data.participants_count,
+      enrolledCount,
+      firstRoundMatchCount: loaded.filter((r) => (r.round_order ?? 0) === 1)
+        .length,
+    });
     const next =
       participants != null && participants >= 2
         ? ensureBracketRows(loaded, participants)
@@ -427,7 +497,33 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
     });
   }
 
+  const expectedMatchCount = useMemo(
+    () => drawRounds.reduce((sum, round) => sum + round.matchCount, 0),
+    [drawRounds],
+  );
+
+  const activeRoundMatchCount = useMemo(() => {
+    if (!activeRound) return 0;
+    return rows.filter((row) => (row.round_order ?? 0) === activeRound.order)
+      .length;
+  }, [rows, activeRound]);
+
+  const plannedMatchCount = useMemo(() => {
+    if (drawRounds.length === 0) return rows.length;
+    const orders = new Set(drawRounds.map((round) => round.order));
+    return rows.filter((row) => orders.has(row.round_order ?? 0)).length;
+  }, [rows, drawRounds]);
+
+  /** Draw already has every slot from participants_count → no manual extras. */
+  const bracketComplete =
+    drawRounds.length > 0 && plannedMatchCount >= expectedMatchCount;
+  const activeRoundFull =
+    activeRound != null && activeRoundMatchCount >= activeRound.matchCount;
+  const canAddMatch =
+    drawRounds.length === 0 ? true : !bracketComplete && !activeRoundFull;
+
   function addRow() {
+    if (!canAddMatch) return;
     const round =
       activeRound ??
       ({
@@ -471,9 +567,20 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
               : `${rows.length} partidos en el cuadro`}
           </p>
         </div>
-        <Button variant="secondary" onClick={addRow} disabled={busy}>
-          + Partido
-        </Button>
+        {drawRounds.length === 0 || !bracketComplete ? (
+          <Button
+            variant="secondary"
+            onClick={addRow}
+            disabled={busy || !canAddMatch}
+            title={
+              activeRoundFull
+                ? "Esta ronda ya tiene todos sus partidos"
+                : undefined
+            }
+          >
+            + Partido
+          </Button>
+        ) : null}
       </div>
 
       {drawRounds.length > 0 ? (
@@ -718,7 +825,13 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
         saveLabel="Guardar partidos"
         onDiscard={() => {
           const loaded = JSON.parse(baseline) as MatchRow[];
-          const participants = editionQuery.data?.data.participants_count;
+          const participants = resolveDrawParticipants({
+            configured: editionQuery.data?.data.participants_count,
+            enrolledCount,
+            firstRoundMatchCount: loaded.filter(
+              (r) => (r.round_order ?? 0) === 1,
+            ).length,
+          });
           setRows(
             participants != null && participants >= 2
               ? ensureBracketRows(loaded, participants)

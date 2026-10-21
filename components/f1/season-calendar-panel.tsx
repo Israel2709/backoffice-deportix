@@ -26,6 +26,7 @@ import { Field, TextInput, TextSelect } from "@/components/capture/field";
 import { Button } from "@/components/ui/button";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { Note } from "@/components/ui/note";
+import { combineUtcDateTime, splitUtcDateTime } from "@/lib/format-date";
 
 const RACE_STATUS_OPTIONS = [
   { value: "Scheduled", label: "Programada" },
@@ -47,26 +48,19 @@ type NewRaceForm = {
 };
 
 function toDateInput(value: string | null | undefined) {
-  if (!value) return "";
-  return value.slice(0, 10);
+  return splitUtcDateTime(value).date;
 }
 
 function toTimeInput(value: string | null | undefined) {
-  if (!value) return "";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value.length >= 16 ? value.slice(11, 16) : "";
-  }
-  return `${String(parsed.getHours()).padStart(2, "0")}:${String(parsed.getMinutes()).padStart(2, "0")}`;
+  return splitUtcDateTime(value).time;
 }
 
 function combineDateTime(date: string, time: string): string {
-  const normalizedTime = time.trim() || "00:00";
-  const parsed = new Date(`${date}T${normalizedTime}`);
-  if (Number.isNaN(parsed.getTime())) {
+  const iso = combineUtcDateTime(date, time);
+  if (!iso) {
     throw new Error("Fecha u hora inválida.");
   }
-  return parsed.toISOString();
+  return iso;
 }
 
 function emptyRace(): NewRaceForm {

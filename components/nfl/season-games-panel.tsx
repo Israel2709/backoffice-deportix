@@ -24,6 +24,7 @@ import { Note } from "@/components/ui/note";
 import { StickyActions } from "@/components/capture/sticky-actions";
 import { TextSelect } from "@/components/capture/field";
 import { cn } from "@/lib/utils";
+import { combineUtcDateTime, splitUtcDateTime } from "@/lib/format-date";
 
 type GameRow = {
   key: string;
@@ -38,22 +39,6 @@ type GameRow = {
   round_id: string;
   week: string;
 };
-
-function splitGameDate(iso: string | null | undefined) {
-  if (!iso) return { date: "", time: "" };
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return { date: "", time: "" };
-  const date = d.toISOString().slice(0, 10);
-  const time = d.toISOString().slice(11, 16);
-  return { date, time };
-}
-
-function combineDateTime(date: string, time: string) {
-  if (!date) return null;
-  const t = time || "00:00";
-  const iso = new Date(`${date}T${t}:00`).toISOString();
-  return Number.isNaN(Date.parse(iso)) ? null : iso;
-}
 
 const inputClass =
   "w-full min-w-0 rounded-[7px] border border-[#d9e0ea] bg-white px-2 py-1.5 text-[13px] text-[#243147]";
@@ -108,7 +93,7 @@ export function SeasonGamesPanel({ seasonId }: { seasonId: string }) {
   useEffect(() => {
     const rounds = roundsQuery.data?.data ?? [];
     const next: GameRow[] = (gamesQuery.data?.data ?? []).map((g) => {
-      const { date, time } = splitGameDate(g.game_date);
+      const { date, time } = splitUtcDateTime(g.game_date);
       const roundName = g.game?.week ?? "";
       const round =
         rounds.find((r) => r.name === roundName) ??
@@ -152,7 +137,7 @@ export function SeasonGamesPanel({ seasonId }: { seasonId: string }) {
           id: row.id,
           home_team_id: row.home_team_id,
           away_team_id: row.away_team_id,
-          game_date: combineDateTime(row.date, row.time),
+          game_date: combineUtcDateTime(row.date, row.time),
           status: row.status,
           score_home: row.score_home === "" ? null : Number(row.score_home),
           score_away: row.score_away === "" ? null : Number(row.score_away),

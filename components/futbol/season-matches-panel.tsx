@@ -24,6 +24,7 @@ import { Note } from "@/components/ui/note";
 import { StickyActions } from "@/components/capture/sticky-actions";
 import { TextSelect } from "@/components/capture/field";
 import { cn } from "@/lib/utils";
+import { combineUtcDateTime, splitUtcDateTime } from "@/lib/format-date";
 
 type MatchRow = {
   key: string;
@@ -60,22 +61,6 @@ function resolveTeamId(
   if (!rawId) return rawId;
   if (byId.has(rawId)) return rawId;
   return byExternal.get(rawId)?.id ?? rawId;
-}
-
-function splitFixtureDate(iso: string | null | undefined) {
-  if (!iso) return { date: "", time: "" };
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return { date: "", time: "" };
-  const date = d.toISOString().slice(0, 10);
-  const time = d.toISOString().slice(11, 16);
-  return { date, time };
-}
-
-function combineDateTime(date: string, time: string) {
-  if (!date) return null;
-  const t = time || "00:00";
-  const iso = new Date(`${date}T${t}:00`).toISOString();
-  return Number.isNaN(Date.parse(iso)) ? null : iso;
 }
 
 const inputClass =
@@ -132,7 +117,7 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
   useEffect(() => {
     const rounds = roundsQuery.data?.data ?? [];
     const next: MatchRow[] = (matchesQuery.data?.data ?? []).map((m) => {
-      const { date, time } = splitFixtureDate(m.fixture_date);
+      const { date, time } = splitUtcDateTime(m.fixture_date);
       const round =
         rounds.find((r) => r.name === m.league?.round) ??
         rounds.find((r) => r.id === (m as { round_id?: string }).round_id);
@@ -172,7 +157,7 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
           id: row.id,
           home_team_id: row.home_team_id,
           away_team_id: row.away_team_id,
-          fixture_date: combineDateTime(row.date, row.time),
+          fixture_date: combineUtcDateTime(row.date, row.time),
           status: row.status,
           goals_home:
             row.goals_home === "" ? null : Number(row.goals_home),

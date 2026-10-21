@@ -27,6 +27,7 @@ import {
   buildDrawRounds,
   type DrawRound,
 } from "@/lib/tennis/draw-rounds";
+import { combineUtcDateTime, splitUtcDateTime } from "@/lib/format-date";
 
 type MatchRow = {
   id?: string;
@@ -138,23 +139,9 @@ function ensureBracketRows(
   return renumberSlotsByRound(result);
 }
 
-function splitFixture(value: string | null | undefined) {
-  if (!value) return { date: "", time: "" };
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return { date: "", time: "" };
-  return { date: d.toISOString().slice(0, 10), time: d.toISOString().slice(11, 16) };
-}
-
-function combineDateTime(date: string, time: string) {
-  if (!date) return null;
-  const t = time || "00:00";
-  const iso = new Date(`${date}T${t}:00`).toISOString();
-  return Number.isNaN(Date.parse(iso)) ? null : iso;
-}
-
 function toRows(matches: Awaited<ReturnType<typeof listEditionMatches>>["data"]): MatchRow[] {
   return matches.map((m) => {
-    const { date, time } = splitFixture(m.fixture_date);
+    const { date, time } = splitUtcDateTime(m.fixture_date);
     const sets = m.sets ?? [];
     return {
       id: m.id,
@@ -196,7 +183,7 @@ function rowToPayload(row: MatchRow) {
     winner_id: row.winner_id || null,
     next_match_id: row.next_match_id || null,
     next_slot: row.next_slot || null,
-    fixture_date: combineDateTime(row.fixture_date, row.fixture_time),
+    fixture_date: combineUtcDateTime(row.fixture_date, row.fixture_time),
     status: row.status,
     sets,
   };

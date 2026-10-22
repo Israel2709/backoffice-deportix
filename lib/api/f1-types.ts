@@ -41,6 +41,9 @@ export interface F1Competition {
   seasonId?: string | null;
   /** Competition lifecycle status from BFF (`scheduled` | `active` | …). */
   status?: F1CompetitionStatus | null;
+  /** Calendar dates from BFF (`YYYY-MM-DD`). */
+  startDate?: string | null;
+  endDate?: string | null;
   sport_id?: string;
 }
 

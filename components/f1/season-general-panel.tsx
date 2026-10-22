@@ -85,16 +85,18 @@ export function SeasonGeneralPanel({ seasonId }: { seasonId: string }) {
       updateF1Season(seasonId, {
         name: form.name.trim() || null,
         status: form.status,
-        start_date: form.start_date
-          ? new Date(form.start_date).toISOString()
-          : null,
-        end_date: form.end_date ? new Date(form.end_date).toISOString() : null,
+        // BFF competition dates are calendar days (`YYYY-MM-DD`).
+        start_date: form.start_date || null,
+        end_date: form.end_date || null,
       }),
     onSuccess: () => {
       toast.success("Temporada actualizada");
       setBaseline(JSON.stringify(form));
       void queryClient.invalidateQueries({
         queryKey: ["admin", "f1", "season", seasonId],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["admin", "f1", "competitions"],
       });
     },
     onError: (error: Error) => toast.error(error.message),

@@ -454,7 +454,7 @@ Recibe el documento completo: `name`, `slug`, `shortName`, `officialName`, `cham
 
 #### `PATCH /formula-1/competitions?id={id}`
 
-Actualiza ese mismo documento, o solo `{ status }` cuando se cambia el estado desde el listado.
+Actualiza ese mismo documento, o solo `{ status }` cuando se cambia el estado desde el listado. También lo usa la pestaña General de la temporada (Operación) para persistir `startDate`, `endDate` y `status` — no hay recurso de escritura de temporadas F1 aparte.
 
 #### `DELETE /formula-1/competitions?id={id}`
 

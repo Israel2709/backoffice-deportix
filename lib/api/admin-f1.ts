@@ -43,6 +43,8 @@ type BffCompetition = {
   location?: string | { country?: string | null; city?: string | null } | null;
   seasonId?: string | null;
   status?: "scheduled" | "active" | "completed" | "cancelled" | null;
+  startDate?: string | null;
+  endDate?: string | null;
   branding?: { logoUrl?: string | null } | null;
 };
 type BffCircuit = {
@@ -161,7 +163,49 @@ function mapCompetition(c: BffCompetition): F1Competition {
     location: mapCompetitionLocation(c.location),
     seasonId: c.seasonId ?? null,
     status: mapCompetitionStatus(c.status),
+    startDate: asCalendarDate(c.startDate),
+    endDate: asCalendarDate(c.endDate),
     sport_id: "formula-1",
+  };
+}
+
+/** Normalize API/ISO date strings to `YYYY-MM-DD` for date inputs and BFF writes. */
+function asCalendarDate(value: string | null | undefined): string | null {
+  if (!value?.trim()) return null;
+  const trimmed = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  const isoDay = trimmed.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(isoDay) ? isoDay : null;
+}
+
+function seasonStatusFromCompetition(
+  status: F1Competition["status"],
+): SeasonStatus {
+  if (status === "active") return "current";
+  if (status === "completed") return "finished";
+  if (status === "cancelled") return "cancelled";
+  return "upcoming";
+}
+
+function competitionStatusFromSeason(
+  status: SeasonStatus | undefined,
+): F1Competition["status"] {
+  if (status === "current") return "active";
+  if (status === "finished") return "completed";
+  if (status === "cancelled") return "cancelled";
+  return "scheduled";
+}
+
+function seasonExtrasFromCompetition(
+  competition: F1Competition,
+  year: number,
+): Partial<F1Season> {
+  return {
+    name: String(year),
+    start_date: competition.startDate ?? null,
+    end_date: competition.endDate ?? null,
+    status: seasonStatusFromCompetition(competition.status),
+    current: competition.status === "active",
   };
 }
 
@@ -576,11 +620,13 @@ export async function listAdminF1Seasons(
     const all: F1Season[] = [];
     for (const c of competitions.data) {
       for (const year of yearList) {
-        all.push(buildSeason(c.id, year));
+        all.push(buildSeason(c.id, year, seasonExtrasFromCompetition(c, year)));
       }
     }
     return { data: all };
   }
+
+  const { data: competition } = await getAdminCompetition(competitionId);
 
   // Races list requires season — probe each global year for this competition.
   const competitionYears = new Set<number>();
@@ -606,16 +652,26 @@ export async function listAdminF1Seasons(
   return {
     data: resolvedYears
       .sort((a, b) => b - a)
-      .map((year) => buildSeason(competitionId, year)),
+      .map((year) =>
+        buildSeason(
+          competitionId,
+          year,
+          seasonExtrasFromCompetition(competition, year),
+        ),
+      ),
   };
 }
 
 export async function getAdminF1Season(id: string): One<F1Season> {
   const { competitionId, year } = parseSeasonId(id);
-  const { data } = await listAdminF1Seasons(competitionId);
-  const found = data.find((s) => s.year === year);
-  if (found) return { data: found };
-  return { data: buildSeason(competitionId, year) };
+  const { data: competition } = await getAdminCompetition(competitionId);
+  return {
+    data: buildSeason(
+      competitionId,
+      year,
+      seasonExtrasFromCompetition(competition, year),
+    ),
+  };
 }
 
 export async function createF1Season(_body: {
@@ -632,9 +688,13 @@ export async function createF1Season(_body: {
   );
 }
 
+/**
+ * Persists season general fields on the competition document
+ * (`startDate` / `endDate` / `status`). There is no separate seasons write API.
+ */
 export async function updateF1Season(
   id: string,
-  _body: Partial<{
+  body: Partial<{
     year: number;
     name: string | null;
     start_date: string | null;
@@ -642,8 +702,42 @@ export async function updateF1Season(
     status: SeasonStatus;
   }>,
 ): One<F1Season> {
-  // No seasons write API — return current synthetic season.
-  return getAdminF1Season(id);
+  const { competitionId, year } = parseSeasonId(id);
+  const patch: Partial<{
+    startDate: string | null;
+    endDate: string | null;
+    status: NonNullable<F1Competition["status"]>;
+  }> = {};
+
+  if (body.start_date !== undefined) {
+    patch.startDate = asCalendarDate(body.start_date);
+  }
+  if (body.end_date !== undefined) {
+    patch.endDate = asCalendarDate(body.end_date);
+  }
+  if (body.status !== undefined) {
+    const mapped = competitionStatusFromSeason(body.status);
+    if (mapped) patch.status = mapped;
+  }
+
+  if (Object.keys(patch).length > 0) {
+    await updateF1CompetitionDocument(competitionId, patch);
+  }
+
+  const { data: competition } = await getAdminCompetition(competitionId);
+  return {
+    data: buildSeason(
+      competitionId,
+      year,
+      {
+        ...seasonExtrasFromCompetition(competition, year),
+        // Keep the form name when provided; BFF has no season-name field.
+        ...(body.name !== undefined
+          ? { name: body.name?.trim() || String(year) }
+          : {}),
+      },
+    ),
+  };
 }
 
 // ─── Participants (competition entries: driver + constructor) ─────────────────

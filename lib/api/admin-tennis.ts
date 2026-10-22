@@ -283,10 +283,30 @@ function mapParticipant(e: BffEntry): TennisEditionParticipant {
 }
 
 function mapMatch(m: BffMatch): TennisMatch {
-  const sets = (m.result?.setScores ?? []).map((s) => ({
-    player1: s.competitor1 ?? null,
-    player2: s.competitor2 ?? null,
-  }));
+  const rawScores = [...(m.result?.setScores ?? [])].sort(
+    (a, b) => (a.set ?? 0) - (b.set ?? 0),
+  );
+  const maxSet = rawScores.reduce(
+    (max, s) => Math.max(max, typeof s.set === "number" ? s.set : 0),
+    0,
+  );
+  const slotCount = Math.min(5, Math.max(3, maxSet, rawScores.length));
+  const sets: Array<{ player1: number | null; player2: number | null }> =
+    Array.from({ length: slotCount }, () => ({
+      player1: null,
+      player2: null,
+    }));
+  for (const score of rawScores) {
+    const idx =
+      typeof score.set === "number" && score.set >= 1
+        ? score.set - 1
+        : sets.findIndex((s) => s.player1 == null && s.player2 == null);
+    if (idx < 0 || idx >= sets.length) continue;
+    sets[idx] = {
+      player1: score.competitor1 ?? null,
+      player2: score.competitor2 ?? null,
+    };
+  }
   const winnerPos = m.bracket?.winnerToPosition;
   return {
     id: String(m.id),
@@ -695,7 +715,11 @@ function buildResultPayload(match: {
   player2_id?: string | null;
   winner_id?: string | null;
   status: TennisMatchBoStatus;
-  sets?: Array<{ player1: number | null; player2: number | null }>;
+  sets?: Array<{
+    set?: number;
+    player1: number | null;
+    player2: number | null;
+  }>;
 }): {
   winnerId: string;
   loserId?: string;
@@ -711,13 +735,23 @@ function buildResultPayload(match: {
   const p2 = match.player2_id?.trim() || null;
   const loserId = winnerId === p1 ? p2 : p1;
 
+  // Preserve explicit set numbers (1..5) so S4/S5 are not renumbered on save.
   const setScores = (match.sets ?? [])
     .map((s, i) => ({
-      set: i + 1,
+      set:
+        typeof s.set === "number" && Number.isFinite(s.set) && s.set >= 1
+          ? s.set
+          : i + 1,
       competitor1: s.player1 ?? 0,
       competitor2: s.player2 ?? 0,
     }))
-    .filter((s) => s.competitor1 > 0 || s.competitor2 > 0);
+    .filter(
+      (s) =>
+        Number.isFinite(s.competitor1) &&
+        Number.isFinite(s.competitor2) &&
+        (s.competitor1 > 0 || s.competitor2 > 0),
+    )
+    .sort((a, b) => a.set - b.set);
 
   const special =
     match.status === "retired" ||
@@ -748,7 +782,12 @@ function buildResultPayload(match: {
     }
   }
   if (setsPlayer1 === setsPlayer2) {
-    if (winnerId === p1) {
+    if (setScores.length > 0) {
+      // Incomplete / tied tally with typed scores: nudge winner so /result accepts
+      // without wiping the setScores array (incl. sets 4–5).
+      if (winnerId === p1) setsPlayer1 += 1;
+      else setsPlayer2 += 1;
+    } else if (winnerId === p1) {
       setsPlayer1 = 2;
       setsPlayer2 = 0;
     } else {
@@ -781,7 +820,11 @@ export async function saveMatchesBatch(
     next_slot?: "player1" | "player2" | null;
     fixture_date?: string | null;
     status: TennisMatchBoStatus;
-    sets?: Array<{ player1: number | null; player2: number | null }>;
+    sets?: Array<{
+      set?: number;
+      player1: number | null;
+      player2: number | null;
+    }>;
   }>,
   options?: { deleteIds?: string[] },
 ): Promise<{ data: TennisMatch[]; propagated: number }> {

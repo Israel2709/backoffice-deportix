@@ -2,6 +2,7 @@
 import { LoadingBlock, LoadingOverlay } from "@/components/ui/spinner";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -74,6 +75,33 @@ function normalizeSetSlots(
   );
   while (mapped.length < count) mapped.push(emptySetScore());
   return mapped.slice(0, MAX_SET_SLOTS);
+}
+
+function parseSetGames(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const n = Number(trimmed);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Non-empty set scores with stable 1-based set numbers (keeps gaps as omitted). */
+function filledSetsFromRow(row: MatchRow): Array<{
+  set: number;
+  player1: number;
+  player2: number;
+}> {
+  const out: Array<{ set: number; player1: number; player2: number }> = [];
+  row.sets.forEach((s, i) => {
+    const player1 = parseSetGames(s.p1);
+    const player2 = parseSetGames(s.p2);
+    if (player1 == null && player2 == null) return;
+    out.push({
+      set: i + 1,
+      player1: player1 ?? 0,
+      player2: player2 ?? 0,
+    });
+  });
+  return out;
 }
 
 function emptyMatchRow(round: DrawRound, slot: number): MatchRow {
@@ -182,12 +210,12 @@ function toRows(matches: Awaited<ReturnType<typeof listEditionMatches>>["data"])
 }
 
 function rowToPayload(row: MatchRow) {
-  const sets = row.sets
-    .map((s) => ({
-      player1: s.p1.trim() ? Number(s.p1) : null,
-      player2: s.p2.trim() ? Number(s.p2) : null,
-    }))
-    .filter((s) => s.player1 != null || s.player2 != null);
+  // Keep set numbers (1..5) so extra sets are not renumbered away on save.
+  const sets = filledSetsFromRow(row).map((s) => ({
+    set: s.set,
+    player1: s.player1,
+    player2: s.player2,
+  }));
 
   return {
     id: row.id,
@@ -202,6 +230,8 @@ function rowToPayload(row: MatchRow) {
     fixture_date: combineUtcDateTime(row.fixture_date, row.fixture_time),
     status: row.status,
     sets,
+    /** Slot count so adding S4/S5 empty columns still marks the row dirty. */
+    set_slot_count: row.sets.length,
   };
 }
 
@@ -233,7 +263,10 @@ function isRowDirty(row: MatchRow, baselineRows: MatchRow[]): boolean {
           b.slot === row.slot,
       );
   if (!base) return true;
-  return JSON.stringify(rowToPayload(row)) !== JSON.stringify(rowToPayload(base));
+  if (JSON.stringify(rowToPayload(row)) !== JSON.stringify(rowToPayload(base))) {
+    return true;
+  }
+  return JSON.stringify(row.sets) !== JSON.stringify(base.sets);
 }
 
 function rowsToPersist(rows: MatchRow[], baselineRows: MatchRow[]): MatchRow[] {
@@ -259,6 +292,8 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
   const [rows, setRows] = useState<MatchRow[]>([]);
   const [baseline, setBaseline] = useState("[]");
   const [activeRoundOrder, setActiveRoundOrder] = useState(1);
+  /** Which set-score cell is focused (`${rowIndex}-s${setIndex}-p1|p2`). */
+  const [focusedScoreKey, setFocusedScoreKey] = useState<string | null>(null);
 
   const matchesQuery = useQuery({
     queryKey: ["admin", "tennis", "matches", editionId],
@@ -624,7 +659,7 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
                 type="button"
                 onClick={() => setActiveRoundOrder(round.order)}
                 className={cn(
-                  "whitespace-nowrap rounded-[9px] border px-2.5 py-2 text-[13px] font-bold",
+                  "cursor-pointer whitespace-nowrap rounded-[9px] border px-2.5 py-2 text-[13px] font-bold",
                   active
                     ? "border-transparent bg-[#edf4ff] text-dx-blue"
                     : "border-dx-line bg-white text-[#5d697d]",
@@ -653,17 +688,16 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
       ) : null}
 
       <div className="overflow-x-auto rounded-[14px] border border-dx-line bg-white">
-        <table className="w-full min-w-[1100px] table-fixed border-separate border-spacing-0 text-left text-sm">
+        <table className="w-full min-w-[980px] table-fixed border-separate border-spacing-0 text-left text-sm">
           <thead>
             <tr className="bg-[#f8fafc] text-[11px] tracking-wide text-[#667085] uppercase">
-              <th className="w-[4%] border-b border-dx-line px-2 py-2.5">#</th>
-              <th className="w-[16%] border-b border-dx-line px-2 py-2.5">
-                Jugador 1
+              <th className="w-[4%] border-b border-dx-line px-2 py-2.5 text-center">
+                #
               </th>
-              <th className="w-[16%] border-b border-dx-line px-2 py-2.5">
-                Jugador 2
+              <th className="w-[20%] border-b border-dx-line px-2 py-2.5">
+                Jugadores
               </th>
-              <th className="w-[18%] border-b border-dx-line px-2 py-2.5">
+              <th className="w-[28%] border-b border-dx-line px-2 py-2.5">
                 Sets
               </th>
               <th className="w-[16%] border-b border-dx-line px-2 py-2.5">
@@ -675,7 +709,7 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
               <th className="w-[14%] border-b border-dx-line px-2 py-2.5">
                 Fecha
               </th>
-              <th className="w-[8%] border-b border-dx-line px-2 py-2.5" />
+              <th className="w-[4%] border-b border-dx-line px-2 py-2.5" />
             </tr>
           </thead>
           <tbody>
@@ -683,124 +717,252 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
               const playersLocked = (row.round_order ?? 0) > 1;
               return (
               <tr key={row.id ?? `row-${index}`}>
-                <td className="border-b border-dx-line px-2 py-2">
-                  <span className="inline-flex min-w-[40px] px-2 py-1.5 text-[13px] text-[#344054]">
+                <td className="border-b border-dx-line px-2 py-2 align-middle text-center">
+                  <span className="text-[13px] font-medium text-[#344054]">
                     {row.slot}
                   </span>
                 </td>
-                <td className="border-b border-dx-line px-2 py-2">
-                  <TextSelect
-                    className={cn(
-                      selectClass,
-                      playersLocked && "cursor-not-allowed bg-[#f8fafc] opacity-80",
-                    )}
-                    value={row.player1_id}
-                    disabled={playersLocked || busy}
-                    title={
-                      playersLocked
-                        ? "Se llena con el ganador de la ronda anterior"
-                        : undefined
-                    }
-                    onChange={(e) =>
-                      updateRow(index, { player1_id: e.target.value })
-                    }
-                  >
-                    <option value="">
-                      {playersLocked ? "Por definir" : "—"}
-                    </option>
-                    {playersForSelect(row.player1_id, index, row.player2_id).map(
-                      (p) => (
-                        <option key={p.id} value={p.id}>
-                          {playerDisplayName(p)}
-                        </option>
-                      ),
-                    )}
-                  </TextSelect>
-                </td>
-                <td className="border-b border-dx-line px-2 py-2">
-                  <TextSelect
-                    className={cn(
-                      selectClass,
-                      playersLocked && "cursor-not-allowed bg-[#f8fafc] opacity-80",
-                    )}
-                    value={row.player2_id}
-                    disabled={playersLocked || busy}
-                    title={
-                      playersLocked
-                        ? "Se llena con el ganador de la ronda anterior"
-                        : undefined
-                    }
-                    onChange={(e) =>
-                      updateRow(index, { player2_id: e.target.value })
-                    }
-                  >
-                    <option value="">
-                      {playersLocked ? "Por definir" : "—"}
-                    </option>
-                    {playersForSelect(row.player2_id, index, row.player1_id).map(
-                      (p) => (
-                        <option key={p.id} value={p.id}>
-                          {playerDisplayName(p)}
-                        </option>
-                      ),
-                    )}
-                  </TextSelect>
-                </td>
-                <td className="border-b border-dx-line px-2 py-2">
-                  <div className="flex flex-wrap items-center gap-1">
-                    {row.sets.map((set, setIndex) => (
-                      <TextInput
-                        key={`set-${setIndex}`}
-                        className={cn(inputClass, "max-w-[40px]")}
-                        placeholder={`S${setIndex + 1}`}
-                        disabled={busy}
-                        value={
-                          set.p1 || set.p2 ? `${set.p1}-${set.p2}` : ""
-                        }
-                        onChange={(e) => {
-                          const [a, b] = e.target.value.split("-");
-                          const sets = row.sets.map((s, i) =>
-                            i === setIndex
-                              ? { p1: a ?? "", p2: b ?? "" }
-                              : s,
-                          );
-                          updateRow(index, { sets });
-                        }}
-                      />
-                    ))}
-                    {row.sets.length < MAX_SET_SLOTS ? (
-                      <Button
-                        variant="ghost"
-                        disabled={busy}
-                        title="Agregar set (máx. 5)"
-                        onClick={() =>
-                          updateRow(index, {
-                            sets: [...row.sets, emptySetScore()],
-                          })
-                        }
-                      >
-                        + Set
-                      </Button>
-                    ) : null}
-                    {row.sets.length > DEFAULT_SET_SLOTS ? (
-                      <Button
-                        variant="ghost"
-                        disabled={busy}
-                        title="Quitar último set"
-                        onClick={() =>
-                          updateRow(index, {
-                            sets: row.sets.slice(0, -1),
-                          })
-                        }
-                      >
-                        −
-                      </Button>
-                    ) : null}
+                <td className="border-b border-dx-line px-2 py-2 align-top">
+                  {/* pt matches S# header row so J1/J2 line up with set score rows */}
+                  <div className="flex flex-col gap-1.5 pt-5">
+                    {(
+                      [
+                        {
+                          label: "J1",
+                          playerId: row.player1_id,
+                          otherId: row.player2_id,
+                          field: "player1_id" as const,
+                        },
+                        {
+                          label: "J2",
+                          playerId: row.player2_id,
+                          otherId: row.player1_id,
+                          field: "player2_id" as const,
+                        },
+                      ] as const
+                    ).map((slot) => {
+                      const player = slot.playerId
+                        ? playersById.get(slot.playerId)
+                        : undefined;
+                      const label = player
+                        ? playerDisplayName(player)
+                        : slot.playerId
+                          ? slot.playerId
+                          : "Por definir";
+                      return (
+                        <div
+                          key={slot.field}
+                          className="flex h-9 min-w-0 items-center gap-1.5"
+                          title={
+                            playersLocked
+                              ? "Se llena con el ganador de la ronda anterior"
+                              : undefined
+                          }
+                        >
+                          <span className="w-6 shrink-0 text-[11px] font-bold tracking-wide text-[#667085]">
+                            {slot.label}
+                          </span>
+                          {playersLocked ? (
+                            <span
+                              className={cn(
+                                "min-w-0 flex-1 truncate text-[13px]",
+                                slot.playerId
+                                  ? "font-medium text-[#253047]"
+                                  : "text-[#98a2b3]",
+                              )}
+                            >
+                              {label}
+                            </span>
+                          ) : (
+                            <TextSelect
+                              className={cn(
+                                selectClass,
+                                "h-9 min-w-0 flex-1 py-0",
+                              )}
+                              value={slot.playerId}
+                              disabled={busy}
+                              onChange={(e) =>
+                                updateRow(index, {
+                                  [slot.field]: e.target.value,
+                                })
+                              }
+                            >
+                              <option value="">—</option>
+                              {playersForSelect(
+                                slot.playerId,
+                                index,
+                                slot.otherId,
+                              ).map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {playerDisplayName(p)}
+                                </option>
+                              ))}
+                            </TextSelect>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </td>
-                <td className="border-b border-dx-line px-2 py-2">
+                <td className="border-b border-dx-line px-2 py-2 align-top">
+                  <div className="flex items-start gap-1.5">
+                    {/*
+                      DOM order is row-major (all J1, then all J2) so Tab goes
+                      S1→S2→S3 for one player before the other. Grid keeps S#
+                      columns visually.
+                    */}
+                    <div
+                      className="grid gap-x-1.5 gap-y-1.5"
+                      style={{
+                        gridTemplateColumns: `repeat(${row.sets.length}, 44px)`,
+                      }}
+                    >
+                      {row.sets.map((_, setIndex) => (
+                        <span
+                          key={`sh-${setIndex}`}
+                          className="flex h-3.5 items-center justify-center text-[10px] font-bold tracking-wide text-[#667085]"
+                        >
+                          S{setIndex + 1}
+                        </span>
+                      ))}
+                      {row.sets.map((set, setIndex) => {
+                        const key = `${index}-s${setIndex}-p1`;
+                        const focused = focusedScoreKey === key;
+                        const empty = set.p1 === "";
+                        return (
+                          <TextInput
+                            key={key}
+                            className={cn(
+                              inputClass,
+                              "h-9 w-full px-1 py-0 text-center tabular-nums",
+                              !focused && empty && "text-[#98a2b3]",
+                            )}
+                            inputMode="numeric"
+                            aria-label={`Set ${setIndex + 1} jugador 1`}
+                            disabled={busy}
+                            value={focused ? set.p1 : empty ? "—" : set.p1}
+                            onFocus={() => setFocusedScoreKey(key)}
+                            onBlur={() =>
+                              setFocusedScoreKey((current) =>
+                                current === key ? null : current,
+                              )
+                            }
+                            onChange={(e) => {
+                              const p1 = e.target.value.replace(/[^\d]/g, "");
+                              setRows((prev) => {
+                                const current = prev[index];
+                                if (!current) return prev;
+                                const sets = current.sets.map((s, i) =>
+                                  i === setIndex ? { ...s, p1 } : s,
+                                );
+                                return prev.map((r, i) =>
+                                  i === index ? { ...r, sets } : r,
+                                );
+                              });
+                            }}
+                          />
+                        );
+                      })}
+                      {row.sets.map((set, setIndex) => {
+                        const key = `${index}-s${setIndex}-p2`;
+                        const focused = focusedScoreKey === key;
+                        const empty = set.p2 === "";
+                        return (
+                          <TextInput
+                            key={key}
+                            className={cn(
+                              inputClass,
+                              "h-9 w-full px-1 py-0 text-center tabular-nums",
+                              !focused && empty && "text-[#98a2b3]",
+                            )}
+                            inputMode="numeric"
+                            aria-label={`Set ${setIndex + 1} jugador 2`}
+                            disabled={busy}
+                            value={focused ? set.p2 : empty ? "—" : set.p2}
+                            onFocus={() => setFocusedScoreKey(key)}
+                            onBlur={() =>
+                              setFocusedScoreKey((current) =>
+                                current === key ? null : current,
+                              )
+                            }
+                            onChange={(e) => {
+                              const p2 = e.target.value.replace(/[^\d]/g, "");
+                              setRows((prev) => {
+                                const current = prev[index];
+                                if (!current) return prev;
+                                const sets = current.sets.map((s, i) =>
+                                  i === setIndex ? { ...s, p2 } : s,
+                                );
+                                return prev.map((r, i) =>
+                                  i === index ? { ...r, sets } : r,
+                                );
+                              });
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                    <div className="flex flex-col gap-1.5 pt-5">
+                      {row.sets.length < MAX_SET_SLOTS ? (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          title="Agregar set (máx. 5)"
+                          aria-label="Agregar set"
+                          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[#f6f8fb] text-sm font-bold text-[#46546a] hover:bg-[#eef1f6] disabled:opacity-50"
+                          onClick={() =>
+                            setRows((prev) => {
+                              const current = prev[index];
+                              if (
+                                !current ||
+                                current.sets.length >= MAX_SET_SLOTS
+                              ) {
+                                return prev;
+                              }
+                              return prev.map((r, i) =>
+                                i === index
+                                  ? { ...r, sets: [...r.sets, emptySetScore()] }
+                                  : r,
+                              );
+                            })
+                          }
+                        >
+                          +
+                        </button>
+                      ) : null}
+                      {row.sets.length > DEFAULT_SET_SLOTS ? (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          title="Quitar último set"
+                          aria-label="Quitar último set"
+                          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[#f6f8fb] text-sm font-bold text-[#46546a] hover:bg-[#eef1f6] disabled:opacity-50"
+                          onClick={() =>
+                            setRows((prev) => {
+                              const current = prev[index];
+                              if (
+                                !current ||
+                                current.sets.length <= DEFAULT_SET_SLOTS
+                              ) {
+                                return prev;
+                              }
+                              return prev.map((r, i) =>
+                                i === index
+                                  ? { ...r, sets: r.sets.slice(0, -1) }
+                                  : r,
+                              );
+                            })
+                          }
+                        >
+                          −
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                </td>
+                <td className="border-b border-dx-line px-2 py-2 align-middle">
                   <TextSelect
-                    className={selectClass}
+                    className={cn(selectClass, "h-9 py-0")}
                     value={row.winner_id}
                     onChange={(e) =>
                       updateRow(index, { winner_id: e.target.value })
@@ -819,9 +981,9 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
                       })}
                   </TextSelect>
                 </td>
-                <td className="border-b border-dx-line px-2 py-2">
+                <td className="border-b border-dx-line px-2 py-2 align-middle">
                   <TextSelect
-                    className={selectClass}
+                    className={cn(selectClass, "h-9 py-0")}
                     value={row.status}
                     onChange={(e) =>
                       updateRow(index, {
@@ -838,11 +1000,11 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
                     ))}
                   </TextSelect>
                 </td>
-                <td className="border-b border-dx-line px-2 py-2">
+                <td className="border-b border-dx-line px-2 py-2 align-middle">
                   <div className="flex w-full flex-col gap-1">
                     <TextInput
                       type="date"
-                      className={inputClass}
+                      className={cn(inputClass, "h-9 py-0")}
                       value={row.fixture_date}
                       onChange={(e) =>
                         updateRow(index, { fixture_date: e.target.value })
@@ -850,7 +1012,7 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
                     />
                     <TextInput
                       type="time"
-                      className={inputClass}
+                      className={cn(inputClass, "h-9 py-0")}
                       value={row.fixture_time}
                       onChange={(e) =>
                         updateRow(index, { fixture_time: e.target.value })
@@ -858,10 +1020,17 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
                     />
                   </div>
                 </td>
-                <td className="border-b border-dx-line px-2 py-2">
-                  <Button variant="ghost" onClick={() => removeRow(index)}>
-                    Quitar
-                  </Button>
+                <td className="border-b border-dx-line px-2 py-2 align-middle text-center">
+                  <button
+                    type="button"
+                    title="Quitar partido"
+                    aria-label="Quitar partido"
+                    disabled={busy}
+                    onClick={() => removeRow(index)}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-dx-red hover:bg-[#fef3f2] disabled:opacity-50"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
                 </td>
               </tr>
               );
@@ -869,7 +1038,7 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
             {visibleRows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={7}
                   className="px-3 py-6 text-center text-sm text-dx-muted"
                 >
                   No hay partidos en esta ronda.
@@ -885,7 +1054,7 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
         En la primera ronda los contrincantes se eligen entre{" "}
         <b>Participantes</b>; desde la segunda se llenan solos con los ganadores
         de la ronda anterior (no se editan a mano). Cada partido trae 3 sets;
-        puedes agregar hasta 5 con <b>+ Set</b>.
+        puedes agregar hasta 5 con <b>+</b>.
       </Note>
       {selectablePlayers.length === 0 ? (
         <Note>

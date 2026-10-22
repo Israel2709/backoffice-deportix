@@ -31,6 +31,11 @@ import {
 } from "@/lib/tennis/draw-rounds";
 import { combineUtcDateTime, splitUtcDateTime } from "@/lib/format-date";
 
+const DEFAULT_SET_SLOTS = 3;
+const MAX_SET_SLOTS = 5;
+
+type SetScoreInput = { p1: string; p2: string };
+
 type MatchRow = {
   id?: string;
   round_name: string;
@@ -44,13 +49,32 @@ type MatchRow = {
   fixture_date: string;
   fixture_time: string;
   status: TennisMatchBoStatus;
-  set1_p1: string;
-  set1_p2: string;
-  set2_p1: string;
-  set2_p2: string;
-  set3_p1: string;
-  set3_p2: string;
+  /** Games per set; always at least 3 slots, up to 5 per match. */
+  sets: SetScoreInput[];
 };
+
+function emptySetScore(): SetScoreInput {
+  return { p1: "", p2: "" };
+}
+
+function emptySetSlots(count = DEFAULT_SET_SLOTS): SetScoreInput[] {
+  return Array.from({ length: count }, () => emptySetScore());
+}
+
+function normalizeSetSlots(
+  sets: Array<{ player1: number | null; player2: number | null }> | undefined,
+): SetScoreInput[] {
+  const mapped = (sets ?? []).map((s) => ({
+    p1: s.player1 != null ? String(s.player1) : "",
+    p2: s.player2 != null ? String(s.player2) : "",
+  }));
+  const count = Math.min(
+    MAX_SET_SLOTS,
+    Math.max(DEFAULT_SET_SLOTS, mapped.length),
+  );
+  while (mapped.length < count) mapped.push(emptySetScore());
+  return mapped.slice(0, MAX_SET_SLOTS);
+}
 
 function emptyMatchRow(round: DrawRound, slot: number): MatchRow {
   return {
@@ -65,12 +89,7 @@ function emptyMatchRow(round: DrawRound, slot: number): MatchRow {
     fixture_date: "",
     fixture_time: "",
     status: "scheduled",
-    set1_p1: "",
-    set1_p2: "",
-    set2_p1: "",
-    set2_p2: "",
-    set3_p1: "",
-    set3_p2: "",
+    sets: emptySetSlots(),
   };
 }
 
@@ -144,7 +163,6 @@ function ensureBracketRows(
 function toRows(matches: Awaited<ReturnType<typeof listEditionMatches>>["data"]): MatchRow[] {
   return matches.map((m) => {
     const { date, time } = splitUtcDateTime(m.fixture_date);
-    const sets = m.sets ?? [];
     return {
       id: m.id,
       round_name: m.round_name,
@@ -158,22 +176,18 @@ function toRows(matches: Awaited<ReturnType<typeof listEditionMatches>>["data"])
       fixture_date: date,
       fixture_time: time,
       status: m.status,
-      set1_p1: sets[0]?.player1 != null ? String(sets[0].player1) : "",
-      set1_p2: sets[0]?.player2 != null ? String(sets[0].player2) : "",
-      set2_p1: sets[1]?.player1 != null ? String(sets[1].player1) : "",
-      set2_p2: sets[1]?.player2 != null ? String(sets[1].player2) : "",
-      set3_p1: sets[2]?.player1 != null ? String(sets[2].player1) : "",
-      set3_p2: sets[2]?.player2 != null ? String(sets[2].player2) : "",
+      sets: normalizeSetSlots(m.sets),
     };
   });
 }
 
 function rowToPayload(row: MatchRow) {
-  const sets = [
-    { player1: row.set1_p1 ? Number(row.set1_p1) : null, player2: row.set1_p2 ? Number(row.set1_p2) : null },
-    { player1: row.set2_p1 ? Number(row.set2_p1) : null, player2: row.set2_p2 ? Number(row.set2_p2) : null },
-    { player1: row.set3_p1 ? Number(row.set3_p1) : null, player2: row.set3_p2 ? Number(row.set3_p2) : null },
-  ].filter((s) => s.player1 != null || s.player2 != null);
+  const sets = row.sets
+    .map((s) => ({
+      player1: s.p1.trim() ? Number(s.p1) : null,
+      player2: s.p2.trim() ? Number(s.p2) : null,
+    }))
+    .filter((s) => s.player1 != null || s.player2 != null);
 
   return {
     id: row.id,
@@ -476,14 +490,28 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
 
   function updateRow(index: number, patch: Partial<MatchRow>) {
     setRows((prev) => {
+      const current = prev[index];
+      if (!current) return prev;
+      // From R2 on, competitors come from prior-round winners — not manual picks.
+      const lockedPlayers = (current.round_order ?? 0) > 1;
+      const safePatch: Partial<MatchRow> = { ...patch };
+      if (lockedPlayers) {
+        delete safePatch.player1_id;
+        delete safePatch.player2_id;
+      }
+      if (Object.keys(safePatch).length === 0) return prev;
+
       const next = prev.map((row, i) =>
-        i === index ? { ...row, ...patch } : row,
+        i === index ? { ...row, ...safePatch } : row,
       );
-      if (patch.round_order !== undefined) {
+      if (safePatch.round_order !== undefined) {
         return renumberSlotsByRound(next);
       }
       // Clear winner if it no longer matches either competitor.
-      if (patch.player1_id !== undefined || patch.player2_id !== undefined) {
+      if (
+        safePatch.player1_id !== undefined ||
+        safePatch.player2_id !== undefined
+      ) {
         const row = next[index];
         if (
           row.winner_id &&
@@ -635,7 +663,7 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
               <th className="w-[16%] border-b border-dx-line px-2 py-2.5">
                 Jugador 2
               </th>
-              <th className="w-[12%] border-b border-dx-line px-2 py-2.5">
+              <th className="w-[18%] border-b border-dx-line px-2 py-2.5">
                 Sets
               </th>
               <th className="w-[16%] border-b border-dx-line px-2 py-2.5">
@@ -651,7 +679,9 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
             </tr>
           </thead>
           <tbody>
-            {visibleRows.map(({ row, index }) => (
+            {visibleRows.map(({ row, index }) => {
+              const playersLocked = (row.round_order ?? 0) > 1;
+              return (
               <tr key={row.id ?? `row-${index}`}>
                 <td className="border-b border-dx-line px-2 py-2">
                   <span className="inline-flex min-w-[40px] px-2 py-1.5 text-[13px] text-[#344054]">
@@ -660,13 +690,24 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
                 </td>
                 <td className="border-b border-dx-line px-2 py-2">
                   <TextSelect
-                    className={selectClass}
+                    className={cn(
+                      selectClass,
+                      playersLocked && "cursor-not-allowed bg-[#f8fafc] opacity-80",
+                    )}
                     value={row.player1_id}
+                    disabled={playersLocked || busy}
+                    title={
+                      playersLocked
+                        ? "Se llena con el ganador de la ronda anterior"
+                        : undefined
+                    }
                     onChange={(e) =>
                       updateRow(index, { player1_id: e.target.value })
                     }
                   >
-                    <option value="">—</option>
+                    <option value="">
+                      {playersLocked ? "Por definir" : "—"}
+                    </option>
                     {playersForSelect(row.player1_id, index, row.player2_id).map(
                       (p) => (
                         <option key={p.id} value={p.id}>
@@ -678,13 +719,24 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
                 </td>
                 <td className="border-b border-dx-line px-2 py-2">
                   <TextSelect
-                    className={selectClass}
+                    className={cn(
+                      selectClass,
+                      playersLocked && "cursor-not-allowed bg-[#f8fafc] opacity-80",
+                    )}
                     value={row.player2_id}
+                    disabled={playersLocked || busy}
+                    title={
+                      playersLocked
+                        ? "Se llena con el ganador de la ronda anterior"
+                        : undefined
+                    }
                     onChange={(e) =>
                       updateRow(index, { player2_id: e.target.value })
                     }
                   >
-                    <option value="">—</option>
+                    <option value="">
+                      {playersLocked ? "Por definir" : "—"}
+                    </option>
                     {playersForSelect(row.player2_id, index, row.player1_id).map(
                       (p) => (
                         <option key={p.id} value={p.id}>
@@ -695,34 +747,55 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
                   </TextSelect>
                 </td>
                 <td className="border-b border-dx-line px-2 py-2">
-                  <div className="flex gap-1">
-                    <TextInput
-                      className={cn(inputClass, "max-w-[36px]")}
-                      placeholder="S1"
-                      value={`${row.set1_p1}-${row.set1_p2}`}
-                      onChange={(e) => {
-                        const [a, b] = e.target.value.split("-");
-                        updateRow(index, { set1_p1: a ?? "", set1_p2: b ?? "" });
-                      }}
-                    />
-                    <TextInput
-                      className={cn(inputClass, "max-w-[36px]")}
-                      placeholder="S2"
-                      value={`${row.set2_p1}-${row.set2_p2}`}
-                      onChange={(e) => {
-                        const [a, b] = e.target.value.split("-");
-                        updateRow(index, { set2_p1: a ?? "", set2_p2: b ?? "" });
-                      }}
-                    />
-                    <TextInput
-                      className={cn(inputClass, "max-w-[36px]")}
-                      placeholder="S3"
-                      value={`${row.set3_p1}-${row.set3_p2}`}
-                      onChange={(e) => {
-                        const [a, b] = e.target.value.split("-");
-                        updateRow(index, { set3_p1: a ?? "", set3_p2: b ?? "" });
-                      }}
-                    />
+                  <div className="flex flex-wrap items-center gap-1">
+                    {row.sets.map((set, setIndex) => (
+                      <TextInput
+                        key={`set-${setIndex}`}
+                        className={cn(inputClass, "max-w-[40px]")}
+                        placeholder={`S${setIndex + 1}`}
+                        disabled={busy}
+                        value={
+                          set.p1 || set.p2 ? `${set.p1}-${set.p2}` : ""
+                        }
+                        onChange={(e) => {
+                          const [a, b] = e.target.value.split("-");
+                          const sets = row.sets.map((s, i) =>
+                            i === setIndex
+                              ? { p1: a ?? "", p2: b ?? "" }
+                              : s,
+                          );
+                          updateRow(index, { sets });
+                        }}
+                      />
+                    ))}
+                    {row.sets.length < MAX_SET_SLOTS ? (
+                      <Button
+                        variant="ghost"
+                        disabled={busy}
+                        title="Agregar set (máx. 5)"
+                        onClick={() =>
+                          updateRow(index, {
+                            sets: [...row.sets, emptySetScore()],
+                          })
+                        }
+                      >
+                        + Set
+                      </Button>
+                    ) : null}
+                    {row.sets.length > DEFAULT_SET_SLOTS ? (
+                      <Button
+                        variant="ghost"
+                        disabled={busy}
+                        title="Quitar último set"
+                        onClick={() =>
+                          updateRow(index, {
+                            sets: row.sets.slice(0, -1),
+                          })
+                        }
+                      >
+                        −
+                      </Button>
+                    ) : null}
                   </div>
                 </td>
                 <td className="border-b border-dx-line px-2 py-2">
@@ -791,7 +864,8 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
                   </Button>
                 </td>
               </tr>
-            ))}
+              );
+            })}
             {visibleRows.length === 0 ? (
               <tr>
                 <td
@@ -808,9 +882,10 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
 
       <Note>
         Las rondas se calculan con la cantidad de participantes del torneo.
-        Los contrincantes solo pueden elegirse entre los de{" "}
-        <b>Participantes</b>. Al guardar con ganadores, el cuadro se enlaza y
-        cada ganador pasa solo a la ronda siguiente; revisa esa pestaña.
+        En la primera ronda los contrincantes se eligen entre{" "}
+        <b>Participantes</b>; desde la segunda se llenan solos con los ganadores
+        de la ronda anterior (no se editan a mano). Cada partido trae 3 sets;
+        puedes agregar hasta 5 con <b>+ Set</b>.
       </Note>
       {selectablePlayers.length === 0 ? (
         <Note>

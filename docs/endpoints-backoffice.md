@@ -245,6 +245,10 @@ Por defecto la UI marca «Publicado». Si queda publicado, enseguida llama a `PO
 
 Actualiza los mismos campos del alta (solo los que cambiaron), incluidos `altImageUrl` y `drawSize`. Si el estado de publicación cambia a publicado llama a `POST /tennis/tournaments/{id}/publish`; si pasa a borrador, a `POST /tennis/tournaments/{id}/unpublish`.
 
+#### `DELETE /tennis/tournaments/{id}`
+
+Elimina un torneo del catálogo de maestros (con confirmación en la UI).
+
 #### `GET /tennis/players?published=all`
 
 Lista jugadores, publicados y borrador. Query opcional: `gender` (`male` | `female`). El estado activo/inactivo se filtra en el cliente.
@@ -609,6 +613,10 @@ Por defecto la UI marca «Publicado». Si queda publicado, enseguida llama a `PO
 Actualiza los campos del torneo que cambiaron (nombre, categoría, sede, fechas, `drawSize`, estado, etc.). No envía un flag de partido.
 
 Si el estado de publicación pasa a publicado llama a `POST /tennis/tournaments/{id}/publish`; si pasa a borrador, a `POST /tennis/tournaments/{id}/unpublish`.
+
+#### `DELETE /tennis/tournaments/{id}`
+
+Elimina el torneo/edición (misma acción que en Datos maestros).
 
 #### `POST /tennis/tournaments/{id}/publish`
 

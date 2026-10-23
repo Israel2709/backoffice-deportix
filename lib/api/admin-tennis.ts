@@ -634,6 +634,12 @@ export async function updateEdition(
   return { data: edition };
 }
 
+export async function deleteEdition(id: string): Promise<void> {
+  await bffRequest(`${PREFIX}/tournaments/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
 // ─── Participants (entries) ───────────────────────────────────────────────────
 
 export async function listEditionParticipants(

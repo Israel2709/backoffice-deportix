@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   createEdition,
+  deleteEdition,
   listAdminEditions,
   updateEdition,
 } from "@/lib/api/admin-tennis";
@@ -23,6 +24,7 @@ import {
   type TennisTournamentCategory,
 } from "@/lib/api/tennis-types";
 import { Button } from "@/components/ui/button";
+import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { LogoUrlOrFileField } from "@/components/capture/logo-url-or-file-field";
 import {
@@ -121,6 +123,10 @@ export function TournamentsMasterPanel() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<TournamentForm>(emptyForm());
+  const [pendingDelete, setPendingDelete] = useState<{
+    id: string;
+    label: string;
+  } | null>(null);
   const formRef = useRef<HTMLDivElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
@@ -252,6 +258,23 @@ export function TournamentsMasterPanel() {
       setCreating(false);
       setEditingId(null);
       setForm(emptyForm());
+      void queryClient.invalidateQueries({
+        queryKey: ["admin", "tennis", "editions"],
+      });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteEdition(id),
+    onSuccess: (_data, id) => {
+      toast.success("Torneo eliminado");
+      setPendingDelete(null);
+      if (editingId === id) {
+        setCreating(false);
+        setEditingId(null);
+        setForm(emptyForm());
+      }
       void queryClient.invalidateQueries({
         queryKey: ["admin", "tennis", "editions"],
       });
@@ -537,6 +560,18 @@ export function TournamentsMasterPanel() {
                 >
                   Editar
                 </Button>
+                <Button
+                  variant="ghost"
+                  disabled={deleteMutation.isPending}
+                  onClick={() =>
+                    setPendingDelete({
+                      id: tournament.id,
+                      label: editionLabel(tournament),
+                    })
+                  }
+                >
+                  Eliminar
+                </Button>
                 <Link
                   href={`/operacion/tenis/${tournament.id}`}
                   className="text-sm text-dx-blue underline"
@@ -551,6 +586,25 @@ export function TournamentsMasterPanel() {
           ) : null}
         </div>
       )}
+
+      <ConfirmModal
+        open={Boolean(pendingDelete)}
+        title="Eliminar torneo"
+        description={
+          pendingDelete
+            ? `¿Eliminar «${pendingDelete.label}» de la base de datos? Esta acción no se puede deshacer.`
+            : undefined
+        }
+        confirmLabel="Eliminar"
+        confirmingLabel="Eliminando…"
+        confirming={deleteMutation.isPending}
+        onCancel={() => {
+          if (!deleteMutation.isPending) setPendingDelete(null);
+        }}
+        onConfirm={() => {
+          if (pendingDelete) deleteMutation.mutate(pendingDelete.id);
+        }}
+      />
 
       <Note>
         El torneo queda disponible en Operación Deportiva para participantes,

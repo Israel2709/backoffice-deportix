@@ -309,8 +309,13 @@ export async function listAdminCompetitions(
 }
 
 export async function getAdminCompetition(id: string): One<F1Competition> {
+  const params = new URLSearchParams({
+    id,
+    // Bypass Vercel CDN copies so status/dates from General show up immediately.
+    _cb: String(Date.now()),
+  });
   const response = await bffRequest<BffCompetition[] | BffCompetition>(
-    `${PREFIX}/competitions?id=${encodeURIComponent(id)}`,
+    `${PREFIX}/competitions?${params.toString()}`,
   );
   const found = firstOf(response);
   if (!found) throw new Error(`Competition not found: ${id}`);
@@ -357,8 +362,12 @@ export async function updateCompetition(
 export async function getF1CompetitionDocument(
   id: string,
 ): One<Record<string, unknown>> {
+  const params = new URLSearchParams({
+    id,
+    _cb: String(Date.now()),
+  });
   const response = await bffRequest<Record<string, unknown>[] | Record<string, unknown>>(
-    `${PREFIX}/competitions?id=${encodeURIComponent(id)}`,
+    `${PREFIX}/competitions?${params.toString()}`,
   );
   const found = firstOf(response);
   if (!found) throw new Error(`Competition not found: ${id}`);

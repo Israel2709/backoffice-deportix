@@ -444,7 +444,7 @@ Lista los años disponibles.
 
 #### `GET /formula-1/competitions`
 
-Lista competiciones. Query: `season`, `country` y un `_cb` con la hora actual para no usar una copia cacheada.
+Lista competiciones. Query: `season`, `country` y un `_cb` con la hora actual para no usar una copia cacheada. La API responde `Cache-Control: no-store` (el estado/`startDate`/`endDate` de la ficha General deben verse al instante tras guardar).
 
 #### `GET /formula-1/competitions?id={id}`
 

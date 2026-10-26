@@ -119,6 +119,8 @@ async function forward(
       status: upstream.status,
       headers: {
         "content-type": upstreamType,
+        // BO must never reuse a cached proxy GET after PATCH/POST.
+        "cache-control": "no-store",
       },
     });
   } catch (error) {

@@ -56,26 +56,29 @@ export function OrganizationsListPanel() {
   return (
     <>
       <CountryCardsGrid className="!grid-cols-2 sm:!grid-cols-3 md:!grid-cols-4 lg:!grid-cols-5">
-        {rows.map((org) => (
-          <CountryCard
-            key={org.id}
-            href={soccerOrgHref(org.id)}
-            name={org.name}
-            code={
-              isDefaultOrganizationId(org.id)
-                ? org.leagues.length > 0
-                  ? `${org.leagues.length} sin asignar`
-                  : "Huérfanas"
-                : (org.country_name ?? org.country_id)
-            }
-            imageUrl={org.logo}
-            mediaLabel={
-              isDefaultOrganizationId(org.id)
-                ? String(org.leagues.length || "—")
-                : org.name.slice(0, 2).toUpperCase()
-            }
-          />
-        ))}
+        {rows.map((org) => {
+          const unassignedCount = org.leagueCount ?? org.leagues.length;
+          return (
+            <CountryCard
+              key={org.id}
+              href={soccerOrgHref(org.id)}
+              name={org.name}
+              code={
+                isDefaultOrganizationId(org.id)
+                  ? unassignedCount > 0
+                    ? `${unassignedCount} sin asignar`
+                    : "Huérfanas"
+                  : (org.country_name ?? org.country_id)
+              }
+              imageUrl={org.logo}
+              mediaLabel={
+                isDefaultOrganizationId(org.id)
+                  ? String(unassignedCount || "—")
+                  : org.name.slice(0, 2).toUpperCase()
+              }
+            />
+          );
+        })}
       </CountryCardsGrid>
       <Note className="mt-5">
         «Sin organización deportiva» agrupa competiciones sin org asignada para

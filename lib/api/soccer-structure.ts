@@ -200,7 +200,49 @@ export type SoccerNavOrganization = {
   country_id: string | null;
   country_name: string | null;
   leagues: SoccerLeague[];
+  /**
+   * Prefer this for badges when leagues were not fully loaded
+   * (org list uses `GET /leagues/unassigned-count` instead of listing all leagues).
+   */
+  leagueCount?: number;
 };
+
+/**
+ * Org-first nav cards from the organizations catalog + unassigned count.
+ * Does not load league payloads — only the orphan badge needs a number.
+ */
+export function navOrganizationsFromCatalog(
+  stored: SoccerOrganizationRecord[],
+  unassignedCount: number,
+): SoccerNavOrganization[] {
+  const rows: SoccerNavOrganization[] = stored
+    .map((org) => ({
+      id: org.id,
+      name: org.name,
+      logo: org.logo ?? null,
+      country_id: org.country_id,
+      country_name: org.country_name ?? null,
+      leagues: [],
+      leagueCount: 0,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, "es"));
+
+  rows.push({
+    id: DEFAULT_ORGANIZATION_ID,
+    name: "Sin organización deportiva",
+    logo: null,
+    country_id: null,
+    country_name: null,
+    leagues: [],
+    leagueCount: Math.max(0, unassignedCount),
+  });
+
+  return rows.sort((a, b) => {
+    if (a.id === DEFAULT_ORGANIZATION_ID) return 1;
+    if (b.id === DEFAULT_ORGANIZATION_ID) return -1;
+    return a.name.localeCompare(b.name, "es");
+  });
+}
 
 /**
  * Build org cards from leagues + catalog: every stored org (even with 0 leagues,
@@ -236,6 +278,7 @@ export function organizationsForSeasonYear(
         country_id: org.country_id,
         country_name: org.country_name ?? null,
         leagues,
+        leagueCount: leagues.length,
       };
     })
     .sort((a, b) => a.name.localeCompare(b.name, "es"));
@@ -244,24 +287,30 @@ export function organizationsForSeasonYear(
   for (const [orgId, leagues] of byOrg) {
     if (rows.some((row) => normalize(row.id) === normalize(orgId))) continue;
     const sample = leagues[0];
+    const sorted = leagues.sort((a, b) => a.name.localeCompare(b.name, "es"));
     rows.push({
       id: orgId,
       name: sample?.organization_name?.trim() || orgId,
       logo: null,
       country_id: sample?.country_id ?? null,
       country_name: sample?.country_name ?? null,
-      leagues: leagues.sort((a, b) => a.name.localeCompare(b.name, "es")),
+      leagues: sorted,
+      leagueCount: sorted.length,
     });
   }
 
   // Always expose the orphan bucket so operators can assign organizations.
+  const orphanLeagues = unassigned.sort((a, b) =>
+    a.name.localeCompare(b.name, "es"),
+  );
   rows.push({
     id: DEFAULT_ORGANIZATION_ID,
     name: "Sin organización deportiva",
     logo: null,
     country_id: null,
     country_name: null,
-    leagues: unassigned.sort((a, b) => a.name.localeCompare(b.name, "es")),
+    leagues: orphanLeagues,
+    leagueCount: orphanLeagues.length,
   });
 
   return rows.sort((a, b) => {

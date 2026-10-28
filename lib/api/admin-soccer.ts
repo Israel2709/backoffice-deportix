@@ -25,6 +25,7 @@ import {
 import {
   DEFAULT_ORGANIZATION_ID,
   isDefaultOrganizationId,
+  navOrganizationsFromCatalog,
   organizationsForSeasonYear,
   type SoccerNavOrganization,
 } from "./soccer-structure";
@@ -513,15 +514,26 @@ export async function listAdminSeasonYears(): List<number> {
 }
 
 /**
+ * Count of soccer leagues with no sports organization
+ * (`GET /leagues/unassigned-count` → `[n]`).
+ */
+export async function countUnassignedLeagues(): Promise<number> {
+  const response = await bffRequest<number[]>("leagues/unassigned-count");
+  const first = asList(response)[0];
+  return Number.isFinite(first) ? Number(first) : 0;
+}
+
+/**
  * Organizations for the org-first operación nav, including the
- * "Sin organización deportiva" bucket for leagues without organization_id.
+ * "Sin organización deportiva" bucket. Uses the lightweight unassigned
+ * count instead of loading every league.
  */
 export async function listNavOrganizations(): List<SoccerNavOrganization> {
-  const [{ data: orgs }, { data: leagues }] = await Promise.all([
+  const [{ data: orgs }, unassignedCount] = await Promise.all([
     listAdminOrganizations(),
-    listAdminLeagues(),
+    countUnassignedLeagues(),
   ]);
-  return { data: organizationsForSeasonYear(leagues, orgs) };
+  return { data: navOrganizationsFromCatalog(orgs, unassignedCount) };
 }
 
 /**
@@ -550,16 +562,10 @@ export async function listOrganizationsForSeasonYear(
 export async function listLeaguesForOrganization(
   orgId: string,
 ): List<SoccerLeague> {
-  if (isDefaultOrganizationId(orgId)) {
-    const { data } = await listAdminLeagues();
-    return {
-      data: data.filter((league) => !league.organization_id?.trim()),
-    };
-  }
-
-  const response = await bffRequest<BffLeagueEntry[]>(
-    `leagues?organization=${encodeURIComponent(orgId)}`,
-  );
+  const query = isDefaultOrganizationId(orgId)
+    ? "leagues?unassigned=true"
+    : `leagues?organization=${encodeURIComponent(orgId)}`;
+  const response = await bffRequest<BffLeagueEntry[]>(query);
   const data = asList(response)
     .map((entry) => {
       const id = leagueExternalId(entry);

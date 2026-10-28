@@ -277,11 +277,15 @@ Recorrido organización → liga → temporada, y dentro de la temporada: genera
 
 #### `GET /organizations`
 
-Lista organizaciones para armar la navegación, incluido el grupo de ligas sin organización.
+Lista organizaciones para armar la navegación.
 
-#### `GET /leagues`
+#### `GET /leagues/unassigned-count`
 
-Lista ligas para esa navegación y para el detalle de una organización.
+Cuenta ligas sin organización deportiva (`response: [n]`). Lo usa la tarjeta «Sin organización deportiva» del primer paso, sin cargar el catálogo completo de ligas.
+
+#### `GET /leagues?unassigned=true`
+
+Lista solo las ligas sin organización (bucket huérfanas). No hidrata seasons.
 
 #### `GET /leagues?organization={orgId}`
 

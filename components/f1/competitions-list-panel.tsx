@@ -14,12 +14,11 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import {
   deleteCompetition,
   listAdminCompetitions,
-  listAdminRacesBySeason,
   updateF1CompetitionDocument,
 } from "@/lib/api/admin-f1";
 import { F1_COMPETITION_STATUS_LABEL } from "@/lib/api/f1-competition";
 import { unlinkCompetitionFromCountry } from "@/lib/f1-competition-countries";
-import { sortCompetitionsBySchedule } from "@/lib/f1-competition-schedule";
+import { sortCompetitionsByDates } from "@/lib/f1-competition-schedule";
 import {
   seasonIdFor,
   type F1Competition,
@@ -59,21 +58,19 @@ export function CompetitionsListPanel({ year }: { year: number }) {
     queryFn: () => listAdminCompetitions({ season: year }),
   });
 
-  const racesQuery = useQuery({
-    queryKey: ["admin", "f1", "races", { season: year }],
-    queryFn: () => listAdminRacesBySeason(year),
-  });
-
   const rows = useMemo(() => {
-    const competitions = competitionsQuery.data?.data ?? [];
-    const races = racesQuery.data?.data ?? [];
-    if (races.length === 0) return competitions;
-    return sortCompetitionsBySchedule(competitions, races);
-  }, [competitionsQuery.data?.data, racesQuery.data?.data]);
+    return sortCompetitionsByDates(competitionsQuery.data?.data ?? []);
+  }, [competitionsQuery.data?.data]);
 
   const columns = useMemo<EditableColumn<F1Competition>[]>(
     () => [
-      { id: "name", header: "Nombre", editable: false },
+      {
+        id: "name",
+        header: "Nombre",
+        editable: false,
+        // Keep calendar order from `sortCompetitionsByDates`.
+        sortable: false,
+      },
       {
         id: "location",
         header: "País",
@@ -88,6 +85,7 @@ export function CompetitionsListPanel({ year }: { year: number }) {
         editAs: "select",
         placeholder: "Estado…",
         options: STATUS_OPTIONS,
+        sortable: false,
         format: (value) => {
           const status = asCompetitionStatus(value);
           return (
@@ -157,7 +155,7 @@ export function CompetitionsListPanel({ year }: { year: number }) {
     [year],
   );
 
-  if (competitionsQuery.isLoading || racesQuery.isLoading) {
+  if (competitionsQuery.isLoading) {
     return <LoadingBlock compact label="Cargando…" />;
   }
 

@@ -2,7 +2,6 @@
 import { LoadingBlock, LoadingOverlay } from "@/components/ui/spinner";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -602,10 +601,6 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
     );
   }
 
-  function removeRow(index: number) {
-    setRows((prev) => renumberSlotsByRound(prev.filter((_, i) => i !== index)));
-  }
-
   if (
     matchesQuery.isLoading ||
     editionQuery.isLoading ||
@@ -706,10 +701,9 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
               <th className="w-[14%] border-b border-dx-line px-2 py-2.5">
                 Estado
               </th>
-              <th className="w-[14%] border-b border-dx-line px-2 py-2.5">
+              <th className="w-[18%] border-b border-dx-line px-2 py-2.5">
                 Fecha
               </th>
-              <th className="w-[4%] border-b border-dx-line px-2 py-2.5" />
             </tr>
           </thead>
           <tbody>
@@ -1020,25 +1014,13 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
                     />
                   </div>
                 </td>
-                <td className="border-b border-dx-line px-2 py-2 align-middle text-center">
-                  <button
-                    type="button"
-                    title="Quitar partido"
-                    aria-label="Quitar partido"
-                    disabled={busy}
-                    onClick={() => removeRow(index)}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-dx-red hover:bg-[#fef3f2] disabled:opacity-50"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </td>
               </tr>
               );
             })}
             {visibleRows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={7}
+                  colSpan={6}
                   className="px-3 py-6 text-center text-sm text-dx-muted"
                 >
                   No hay partidos en esta ronda.

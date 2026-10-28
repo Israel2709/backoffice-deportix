@@ -3,11 +3,13 @@
 import { LoadingBlock } from "@/components/ui/spinner";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
   createEdition,
+  deleteEdition,
   listAdminEditions,
   updateEdition,
 } from "@/lib/api/admin-tennis";
@@ -19,6 +21,7 @@ import {
   type TennisPublishStatus,
 } from "@/lib/api/tennis-types";
 import { Button } from "@/components/ui/button";
+import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { StatusBadge } from "@/components/ui/status-badge";
 import {
   Field,
@@ -42,6 +45,10 @@ function publishTone(status: TennisPublishStatus) {
 export function EditionsListPanel() {
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<{
+    id: string;
+    label: string;
+  } | null>(null);
   const [form, setForm] = useState<{
     tournament_name: string;
     year: number | null;
@@ -114,6 +121,18 @@ export function EditionsListPanel() {
     onError: (error: Error) => toast.error(error.message),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteEdition(id),
+    onSuccess: () => {
+      toast.success("Torneo eliminado");
+      setPendingDelete(null);
+      void queryClient.invalidateQueries({
+        queryKey: ["admin", "tennis", "editions"],
+      });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
   const editions = editionsQuery.data?.data ?? [];
   const active = editions.filter(
     (e) => e.status === "current" || e.status === "upcoming",
@@ -178,6 +197,21 @@ export function EditionsListPanel() {
                       })
                     }
                   />
+                  <Button
+                    variant="ghost"
+                    title="Eliminar torneo"
+                    aria-label={`Eliminar ${editionLabel(edition)}`}
+                    disabled={deleteMutation.isPending}
+                    className="h-9 w-9 justify-center px-0 py-0 text-dx-red hover:bg-[#fef3f2]"
+                    onClick={() =>
+                      setPendingDelete({
+                        id: edition.id,
+                        label: editionLabel(edition),
+                      })
+                    }
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                   <Link
                     href={`/operacion/tenis/${edition.id}`}
                     className="text-2xl text-[#8090a8] hover:text-dx-ink"
@@ -214,21 +248,38 @@ export function EditionsListPanel() {
                       {EDITION_STATUS_LABEL[edition.status]} ·{" "}
                       {PUBLISH_STATUS_LABEL[edition.publish_status]}
                     </Link>
-                    <PublishStatusRadio
-                      compact
-                      name={`publish-${edition.id}`}
-                      disabled={
-                        publishMutation.isPending &&
-                        publishMutation.variables?.id === edition.id
-                      }
-                      value={edition.publish_status}
-                      onChange={(publish_status) =>
-                        publishMutation.mutate({
-                          id: edition.id,
-                          publish_status,
-                        })
-                      }
-                    />
+                    <div className="flex items-center gap-2">
+                      <PublishStatusRadio
+                        compact
+                        name={`publish-${edition.id}`}
+                        disabled={
+                          publishMutation.isPending &&
+                          publishMutation.variables?.id === edition.id
+                        }
+                        value={edition.publish_status}
+                        onChange={(publish_status) =>
+                          publishMutation.mutate({
+                            id: edition.id,
+                            publish_status,
+                          })
+                        }
+                      />
+                      <Button
+                        variant="ghost"
+                        title="Eliminar torneo"
+                        aria-label={`Eliminar ${editionLabel(edition)}`}
+                        disabled={deleteMutation.isPending}
+                        className="h-9 w-9 justify-center px-0 py-0 text-dx-red hover:bg-[#fef3f2]"
+                        onClick={() =>
+                          setPendingDelete({
+                            id: edition.id,
+                            label: editionLabel(edition),
+                          })
+                        }
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -236,6 +287,25 @@ export function EditionsListPanel() {
           ) : null}
         </>
       )}
+
+      <ConfirmModal
+        open={Boolean(pendingDelete)}
+        title="Eliminar torneo"
+        description={
+          pendingDelete
+            ? `¿Eliminar «${pendingDelete.label}» de la base de datos? Esta acción no se puede deshacer.`
+            : undefined
+        }
+        confirmLabel="Eliminar"
+        confirmingLabel="Eliminando…"
+        confirming={deleteMutation.isPending}
+        onCancel={() => {
+          if (!deleteMutation.isPending) setPendingDelete(null);
+        }}
+        onConfirm={() => {
+          if (pendingDelete) deleteMutation.mutate(pendingDelete.id);
+        }}
+      />
 
       {showForm ? (
         <div className="rounded-2xl border border-dx-line bg-dx-card p-5">

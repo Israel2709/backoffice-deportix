@@ -3,9 +3,12 @@
 import { LoadingBlock } from "@/components/ui/spinner";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
+  deleteEdition,
   getAdminEdition,
   listEditionMatches,
   listEditionParticipants,
@@ -19,6 +22,8 @@ import {
   type TennisPublishStatus,
 } from "@/lib/api/tennis-types";
 import { useDirtyGuard } from "@/hooks/use-dirty-guard";
+import { Button } from "@/components/ui/button";
+import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { KpiGrid } from "@/components/ui/kpi-grid";
 import { StatusBadge } from "@/components/ui/status-badge";
 import {
@@ -36,6 +41,7 @@ function toDateInput(value: string | null | undefined) {
 }
 
 export function EditionGeneralPanel({ editionId }: { editionId: string }) {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const editionQuery = useQuery({
     queryKey: ["admin", "tennis", "edition", editionId],
@@ -70,6 +76,7 @@ export function EditionGeneralPanel({ editionId }: { editionId: string }) {
     end_date: "",
   });
   const [baseline, setBaseline] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     const edition = editionQuery.data?.data;
@@ -123,6 +130,19 @@ export function EditionGeneralPanel({ editionId }: { editionId: string }) {
     onError: (error: Error) => toast.error(error.message),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteEdition(editionId),
+    onSuccess: () => {
+      toast.success("Torneo eliminado");
+      setConfirmDelete(false);
+      void queryClient.invalidateQueries({
+        queryKey: ["admin", "tennis", "editions"],
+      });
+      router.push("/operacion/tenis");
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
   const edition = editionQuery.data?.data;
   const matches = matchesQuery.data?.data ?? [];
   const finished = matches.filter((m) => m.status === "finished").length;
@@ -141,7 +161,7 @@ export function EditionGeneralPanel({ editionId }: { editionId: string }) {
           <p className="text-sm text-dx-muted">Datos generales del torneo</p>
         </div>
         {edition ? (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <StatusBadge
               tone={
                 edition.status === "current"
@@ -160,6 +180,16 @@ export function EditionGeneralPanel({ editionId }: { editionId: string }) {
             >
               {PUBLISH_STATUS_LABEL[edition.publish_status]}
             </StatusBadge>
+            <Button
+              variant="ghost"
+              title="Eliminar torneo"
+              aria-label={`Eliminar ${editionLabel(edition)}`}
+              disabled={deleteMutation.isPending}
+              className="h-9 w-9 justify-center px-0 py-0 text-dx-red hover:bg-[#fef3f2]"
+              onClick={() => setConfirmDelete(true)}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
           </div>
         ) : null}
       </div>
@@ -272,6 +302,23 @@ export function EditionGeneralPanel({ editionId }: { editionId: string }) {
         saveLabel="Guardar general"
         onDiscard={() => setForm(JSON.parse(baseline) as typeof form)}
         onSave={() => saveMutation.mutate()}
+      />
+
+      <ConfirmModal
+        open={confirmDelete}
+        title="Eliminar torneo"
+        description={
+          edition
+            ? `¿Eliminar «${editionLabel(edition)}» de la base de datos? Esta acción no se puede deshacer.`
+            : undefined
+        }
+        confirmLabel="Eliminar"
+        confirmingLabel="Eliminando…"
+        confirming={deleteMutation.isPending}
+        onCancel={() => {
+          if (!deleteMutation.isPending) setConfirmDelete(false);
+        }}
+        onConfirm={() => deleteMutation.mutate()}
       />
     </div>
   );

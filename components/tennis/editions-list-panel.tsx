@@ -5,7 +5,7 @@ import { LoadingBlock } from "@/components/ui/spinner";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   createEdition,
@@ -44,6 +44,7 @@ function publishTone(status: TennisPublishStatus) {
 
 export function EditionsListPanel() {
   const queryClient = useQueryClient();
+  const [nameQuery, setNameQuery] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<{
     id: string;
@@ -134,10 +135,19 @@ export function EditionsListPanel() {
   });
 
   const editions = editionsQuery.data?.data ?? [];
-  const active = editions.filter(
+  const filtered = useMemo(() => {
+    const q = nameQuery.trim().toLowerCase();
+    if (!q) return editions;
+    return editions.filter((edition) => {
+      const label = editionLabel(edition).toLowerCase();
+      const name = (edition.tournament_name ?? "").toLowerCase();
+      return label.includes(q) || name.includes(q);
+    });
+  }, [editions, nameQuery]);
+  const active = filtered.filter(
     (e) => e.status === "current" || e.status === "upcoming",
   );
-  const historic = editions.filter(
+  const historic = filtered.filter(
     (e) => e.status === "finished" || e.status === "cancelled",
   );
 
@@ -152,6 +162,13 @@ export function EditionsListPanel() {
         </div>
         <Button onClick={() => setShowForm(true)}>+ Nueva edición</Button>
       </div>
+
+      <TextInput
+        value={nameQuery}
+        onChange={(e) => setNameQuery(e.target.value)}
+        placeholder="Buscar por nombre de torneo…"
+        aria-label="Buscar ediciones por nombre"
+      />
 
       {editionsQuery.isLoading ? (
         <LoadingBlock compact label="Cargando…" />
@@ -224,7 +241,9 @@ export function EditionsListPanel() {
             ))}
             {active.length === 0 ? (
               <p className="text-sm text-dx-muted">
-                No hay ediciones vigentes/próximas.
+                {nameQuery.trim()
+                  ? "Ninguna edición vigente/próxima coincide con la búsqueda."
+                  : "No hay ediciones vigentes/próximas."}
               </p>
             ) : null}
           </div>

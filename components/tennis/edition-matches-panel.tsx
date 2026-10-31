@@ -2,7 +2,7 @@
 import { LoadingBlock, LoadingOverlay } from "@/components/ui/spinner";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   getAdminEdition,
@@ -175,71 +175,74 @@ function playerSlotLabel(
   return playerId || "Por definir";
 }
 
-/** Fills missing slots per round from participants_count; keeps extra existing rows. */
+function isEmptyMatchShell(row: MatchRow): boolean {
+  return (
+    !row.player1_id &&
+    !row.player2_id &&
+    !row.winner_id &&
+    row.status !== "finished" &&
+    row.status !== "bye"
+  );
+}
+
+/**
+ * Builds exactly `matchCount` slots per round (R1 = participants/2).
+ * Drops extras beyond capacity (prefer keeping filled matches) and returns
+ * discarded API ids so the panel can delete stale shells.
+ */
 function ensureBracketRows(
   existing: MatchRow[],
   participants: number,
-): MatchRow[] {
+): { rows: MatchRow[]; discardedIds: string[] } {
   const rounds = buildDrawRounds(participants);
-  if (rounds.length === 0) return existing;
+  if (rounds.length === 0) {
+    return { rows: existing, discardedIds: [] };
+  }
 
   const plannedOrders = new Set(rounds.map((r) => r.order));
   const result: MatchRow[] = [];
+  const discardedIds: string[] = [];
 
   for (const round of rounds) {
     const inRound = existing
       .filter((row) => (row.round_order ?? 0) === round.order)
-      .sort((a, b) => a.slot - b.slot || 0);
-    const claimed = new Set<MatchRow>();
+      .sort((a, b) => {
+        const aFilled = Number(!isEmptyMatchShell(a));
+        const bFilled = Number(!isEmptyMatchShell(b));
+        if (bFilled !== aFilled) return bFilled - aFilled;
+        return a.slot - b.slot;
+      });
 
-    for (let slot = 1; slot <= round.matchCount; slot += 1) {
-      const exact = inRound.find(
-        (row) => row.slot === slot && !claimed.has(row),
-      );
-      if (exact) {
-        claimed.add(exact);
-        result.push({
-          ...exact,
-          round_order: round.order,
-          round_name: exact.round_name?.trim() ? exact.round_name : round.name,
-          slot,
-        });
-        continue;
-      }
-      const leftover = inRound.find((row) => !claimed.has(row));
-      if (leftover) {
-        claimed.add(leftover);
-        result.push({
-          ...leftover,
-          round_order: round.order,
-          round_name: leftover.round_name?.trim()
-            ? leftover.round_name
-            : round.name,
-          slot,
-        });
-        continue;
-      }
-      result.push(emptyMatchRow(round, slot));
+    const kept = inRound.slice(0, round.matchCount);
+    for (const row of inRound.slice(round.matchCount)) {
+      if (row.id) discardedIds.push(row.id);
     }
 
-    for (const row of inRound) {
-      if (!claimed.has(row)) {
+    for (let slot = 1; slot <= round.matchCount; slot += 1) {
+      const row = kept[slot - 1];
+      if (row) {
         result.push({
           ...row,
           round_order: round.order,
           round_name: row.round_name?.trim() ? row.round_name : round.name,
+          slot,
         });
+      } else {
+        result.push(emptyMatchRow(round, slot));
       }
     }
   }
 
   for (const row of existing) {
-    if (!plannedOrders.has(row.round_order ?? 0)) {
-      result.push(row);
+    if (!plannedOrders.has(row.round_order ?? 0) && row.id) {
+      discardedIds.push(row.id);
     }
   }
 
-  return renumberSlotsByRound(result);
+  return {
+    rows: renumberSlotsByRound(result),
+    discardedIds: [...new Set(discardedIds)],
+  };
 }
 
 function toRows(matches: Awaited<ReturnType<typeof listEditionMatches>>["data"]): MatchRow[] {
@@ -481,6 +484,8 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
     return available;
   }
 
+  const trimmedOrphansRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (matchesQuery.data == null) return;
     if (editionQuery.isLoading) return;
@@ -493,18 +498,41 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
       enrolledCount: enrolled,
       firstRoundMatchCount: firstRound,
     });
-    const next =
+    const ensured =
       participants != null && participants >= 2
         ? ensureBracketRows(loaded, participants)
-        : loaded;
-    setRows(next);
+        : { rows: loaded, discardedIds: [] as string[] };
+    setRows(ensured.rows);
     // Baseline must match what the UI shows (including empty bracket shells).
-    setBaseline(JSON.stringify(next));
+    setBaseline(JSON.stringify(ensured.rows));
+
+    // Drop stale R1 shells left over when the bracket was wrongly sized as n
+    // matches instead of n/2 (otherwise they reappear on every reload).
+    const orphanKey = ensured.discardedIds.slice().sort().join(",");
+    if (
+      ensured.discardedIds.length > 0 &&
+      trimmedOrphansRef.current !== orphanKey
+    ) {
+      trimmedOrphansRef.current = orphanKey;
+      void saveMatchesBatch(editionId, [], {
+        deleteIds: ensured.discardedIds,
+      })
+        .then(() => {
+          void queryClient.invalidateQueries({
+            queryKey: ["admin", "tennis", "matches", editionId],
+          });
+        })
+        .catch(() => {
+          trimmedOrphansRef.current = null;
+        });
+    }
   }, [
     matchesQuery.data,
     editionQuery.data,
     editionQuery.isLoading,
     participantsQuery.data,
+    editionId,
+    queryClient,
   ]);
 
   useEffect(() => {
@@ -542,7 +570,7 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
     });
     const next =
       participants != null && participants >= 2
-        ? ensureBracketRows(loaded, participants)
+        ? ensureBracketRows(loaded, participants).rows
         : loaded;
     setRows(next);
     setBaseline(JSON.stringify(next));
@@ -1151,7 +1179,7 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
           });
           setRows(
             participants != null && participants >= 2
-              ? ensureBracketRows(loaded, participants)
+              ? ensureBracketRows(loaded, participants).rows
               : loaded,
           );
         }}

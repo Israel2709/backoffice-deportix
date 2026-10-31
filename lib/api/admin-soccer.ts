@@ -764,6 +764,12 @@ export async function updateLeague(
   return { data: mapLeague(updated, id) };
 }
 
+export async function deleteLeague(id: string): Promise<void> {
+  await bffRequest(`leagues?id=${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
 // ─── Teams ────────────────────────────────────────────────────────────────────
 
 export async function listAdminTeams(

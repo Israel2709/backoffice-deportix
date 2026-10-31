@@ -1,13 +1,16 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { toast } from "sonner";
 import { EditableDataTable } from "@/components/data/editable-data-table";
+import { Button } from "@/components/ui/button";
+import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { Note } from "@/components/ui/note";
 import { LoadingBlock } from "@/components/ui/spinner";
 import {
+  deleteLeague,
   listAdminOrganizations,
   listLeaguesForOrganization,
   updateLeague,
@@ -21,6 +24,12 @@ import type { SoccerLeague } from "@/lib/api/soccer-types";
 export function CompetitionsListPanel({ orgId }: { orgId: string }) {
   const queryClient = useQueryClient();
   const isUnassigned = isDefaultOrganizationId(orgId);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{
+    ids: string[];
+    label: string;
+  } | null>(null);
 
   const leaguesQuery = useQuery({
     queryKey: ["admin", "soccer", "nav-leagues", orgId],
@@ -97,6 +106,18 @@ export function CompetitionsListPanel({ orgId }: { orgId: string }) {
     [],
   );
 
+  function invalidateLeagues() {
+    void queryClient.invalidateQueries({
+      queryKey: ["admin", "soccer", "nav-leagues"],
+    });
+    void queryClient.invalidateQueries({
+      queryKey: ["admin", "soccer", "nav-orgs"],
+    });
+    void queryClient.invalidateQueries({
+      queryKey: ["admin", "soccer", "leagues"],
+    });
+  }
+
   const saveMutation = useMutation({
     mutationFn: async (
       changes: Array<{ id: string; values: Record<string, string> }>,
@@ -126,17 +147,30 @@ export function CompetitionsListPanel({ orgId }: { orgId: string }) {
           ? "Organización asignada"
           : `${changes.length} competiciones actualizadas`,
       );
-      void queryClient.invalidateQueries({
-        queryKey: ["admin", "soccer", "nav-leagues"],
-      });
-      void queryClient.invalidateQueries({
-        queryKey: ["admin", "soccer", "nav-orgs"],
-      });
-      void queryClient.invalidateQueries({
-        queryKey: ["admin", "soccer", "leagues"],
-      });
+      invalidateLeagues();
     },
     onError: (error: Error) => toast.error(error.message),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      for (const id of ids) {
+        setDeletingId(id);
+        await deleteLeague(id);
+      }
+    },
+    onSuccess: (_data, ids) => {
+      toast.success(
+        ids.length === 1
+          ? "Liga eliminada"
+          : `${ids.length} ligas eliminadas`,
+      );
+      setPendingDelete(null);
+      setSelectedIds((prev) => prev.filter((id) => !ids.includes(id)));
+      invalidateLeagues();
+    },
+    onError: (error: Error) => toast.error(error.message),
+    onSettled: () => setDeletingId(null),
   });
 
   if (leaguesQuery.isLoading || (isUnassigned && orgsQuery.isLoading)) {
@@ -185,23 +219,100 @@ export function CompetitionsListPanel({ orgId }: { orgId: string }) {
 
   return (
     <>
+      {isUnassigned && selectedIds.length > 0 ? (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#f1dfa9] bg-[#fff9e8] px-4 py-3">
+          <p className="text-[13px] text-[#7d5a00]">
+            {selectedIds.length} seleccionado
+            {selectedIds.length === 1 ? "" : "s"}
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              disabled={deleteMutation.isPending}
+              onClick={() => setSelectedIds([])}
+            >
+              Limpiar selección
+            </Button>
+            <Button
+              disabled={deleteMutation.isPending}
+              className="bg-dx-red text-white hover:bg-[#c81e1e]"
+              onClick={() => {
+                setPendingDelete({
+                  ids: selectedIds,
+                  label:
+                    selectedIds.length === 1
+                      ? (rows.find((item) => item.id === selectedIds[0])
+                          ?.name ?? "esta liga")
+                      : `${selectedIds.length} ligas`,
+                });
+              }}
+            >
+              Eliminar seleccionados
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
       <EditableDataTable
         columns={columns}
         rows={rows}
         getValues={getValues}
         rowHref={(row) => `/operacion/futbol/${encodeURIComponent(row.id)}`}
         showOpenAction
+        selectable={isUnassigned}
+        selectedIds={isUnassigned ? selectedIds : undefined}
+        onSelectionChange={isUnassigned ? setSelectedIds : undefined}
         saving={saveMutation.isPending}
+        deletingId={isUnassigned ? deletingId : null}
         onSave={
           isUnassigned
             ? (changes) => saveMutation.mutateAsync(changes)
             : undefined
         }
+        onDelete={
+          isUnassigned
+            ? (id) => {
+                const league = rows.find((item) => item.id === id);
+                setPendingDelete({
+                  ids: [id],
+                  label: league?.name ?? "esta liga",
+                });
+              }
+            : undefined
+        }
         emptyLabel="No hay ligas."
       />
+
+      {isUnassigned ? (
+        <ConfirmModal
+          open={Boolean(pendingDelete)}
+          title={
+            pendingDelete && pendingDelete.ids.length > 1
+              ? "Eliminar ligas"
+              : "Eliminar liga"
+          }
+          description={
+            pendingDelete
+              ? pendingDelete.ids.length === 1
+                ? `¿Eliminar «${pendingDelete.label}»? Se borrará de la base de datos y no se puede deshacer.`
+                : `¿Eliminar ${pendingDelete.label}? Se borrarán de la base de datos y no se puede deshacer.`
+              : undefined
+          }
+          confirmLabel="Eliminar"
+          confirmingLabel="Eliminando…"
+          confirming={deleteMutation.isPending}
+          onCancel={() => {
+            if (!deleteMutation.isPending) setPendingDelete(null);
+          }}
+          onConfirm={() => {
+            if (pendingDelete) deleteMutation.mutate(pendingDelete.ids);
+          }}
+        />
+      ) : null}
+
       <Note className="mt-5">
         {isUnassigned
-          ? "Asigna una organización a cada competición huérfana y guarda. El país se toma de la organización."
+          ? "Asigna una organización a cada competición huérfana y guarda. El país se toma de la organización. También puedes eliminar ligas de forma individual o en lote."
           : "Selecciona una liga para ver y operar sus temporadas."}
       </Note>
     </>

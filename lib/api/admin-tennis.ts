@@ -6,16 +6,18 @@
  */
 import { bffRequest } from "./bff-client";
 import type { ApiListResponse } from "./types";
-import type {
-  TennisEdition,
-  TennisEditionParticipant,
-  TennisEditionStatus,
-  TennisMatch,
-  TennisMatchBoStatus,
-  TennisPlayer,
-  TennisPlayerStatus,
-  TennisPublishStatus,
-  TennisTournamentCategory,
+import {
+  BYE_PLAYER_ID,
+  isByePlayerId,
+  type TennisEdition,
+  type TennisEditionParticipant,
+  type TennisEditionStatus,
+  type TennisMatch,
+  type TennisMatchBoStatus,
+  type TennisPlayer,
+  type TennisPlayerStatus,
+  type TennisPublishStatus,
+  type TennisTournamentCategory,
 } from "./tennis-types";
 
 export type {
@@ -98,6 +100,8 @@ type BffMatch = {
     competitor2SourceMatchId: string | null;
     winnerToMatchId: string | null;
     winnerToPosition: "competitor_1" | "competitor_2" | null;
+    competitor1EntryType?: string | null;
+    competitor2EntryType?: string | null;
   };
   result?: {
     winnerId?: string | null;
@@ -170,6 +174,8 @@ function toBoMatchStatus(status: string): TennisMatchBoStatus {
       return "retired";
     case "walkover":
       return "walkover";
+    case "bye":
+      return "bye";
     case "disqualification":
       return "disqualified";
     case "cancelled":
@@ -193,6 +199,8 @@ function fromBoMatchStatus(status: TennisMatchBoStatus): string {
       return "retirement";
     case "walkover":
       return "walkover";
+    case "bye":
+      return "bye";
     case "disqualified":
       return "disqualification";
     case "cancelled":
@@ -204,17 +212,37 @@ function fromBoMatchStatus(status: TennisMatchBoStatus): string {
 
 function resultTypeFromStatus(
   status: TennisMatchBoStatus,
-): "normal" | "retirement" | "walkover" | "disqualification" {
+): "normal" | "retirement" | "walkover" | "bye" | "disqualification" {
   switch (status) {
     case "retired":
       return "retirement";
     case "walkover":
       return "walkover";
+    case "bye":
+      return "bye";
     case "disqualified":
       return "disqualification";
     default:
       return "normal";
   }
+}
+
+function sideFromUi(
+  playerId: string | null | undefined,
+): { competitorId: string | null; entryType: string | null } {
+  if (isByePlayerId(playerId)) {
+    return { competitorId: null, entryType: "bye" };
+  }
+  const id = playerId?.trim() || null;
+  return { competitorId: id, entryType: id ? "direct" : null };
+}
+
+function sideToUi(
+  competitorId: string | null | undefined,
+  entryType: string | null | undefined,
+): string | null {
+  if (entryType === "bye" && !competitorId) return BYE_PLAYER_ID;
+  return competitorId != null ? String(competitorId) : null;
 }
 
 function dateOnly(value: string | null | undefined, fallbackYear: number): string {
@@ -308,14 +336,24 @@ function mapMatch(m: BffMatch): TennisMatch {
     };
   }
   const winnerPos = m.bracket?.winnerToPosition;
+  const entry1 = m.bracket?.competitor1EntryType ?? null;
+  const entry2 = m.bracket?.competitor2EntryType ?? null;
   return {
     id: String(m.id),
     edition_id: String(m.tournamentId),
     round_name: m.roundName ?? `R${m.roundNumber}`,
     round_order: m.roundNumber,
     slot: m.bracketPosition,
-    player1_id: m.competitor1?.id != null ? String(m.competitor1.id) : null,
-    player2_id: m.competitor2?.id != null ? String(m.competitor2.id) : null,
+    player1_id: sideToUi(
+      m.competitor1?.id != null ? String(m.competitor1.id) : null,
+      entry1,
+    ),
+    player2_id: sideToUi(
+      m.competitor2?.id != null ? String(m.competitor2.id) : null,
+      entry2,
+    ),
+    player1_entry_type: entry1,
+    player2_entry_type: entry2,
     winner_id: m.result?.winnerId != null ? String(m.result.winnerId) : null,
     next_match_id: m.bracket?.winnerToMatchId ?? null,
     next_slot:
@@ -729,17 +767,21 @@ function buildResultPayload(match: {
 }): {
   winnerId: string;
   loserId?: string;
-  resultType: "normal" | "retirement" | "walkover" | "disqualification";
+  resultType: "normal" | "retirement" | "walkover" | "bye" | "disqualification";
   setsPlayer1?: number;
   setsPlayer2?: number;
   setScores?: Array<{ set: number; competitor1: number; competitor2: number }>;
 } | null {
   const winnerId = match.winner_id?.trim();
-  if (!winnerId) return null;
+  if (!winnerId || isByePlayerId(winnerId)) return null;
 
-  const p1 = match.player1_id?.trim() || null;
-  const p2 = match.player2_id?.trim() || null;
-  const loserId = winnerId === p1 ? p2 : p1;
+  const p1Raw = match.player1_id?.trim() || null;
+  const p2Raw = match.player2_id?.trim() || null;
+  const p1Bye = isByePlayerId(p1Raw);
+  const p2Bye = isByePlayerId(p2Raw);
+  const p1 = p1Bye ? null : p1Raw;
+  const p2 = p2Bye ? null : p2Raw;
+  const isByeMatch = p1Bye || p2Bye;
 
   // Preserve explicit set numbers (1..5) so S4/S5 are not renumbered on save.
   const setScores = (match.sets ?? [])
@@ -755,13 +797,38 @@ function buildResultPayload(match: {
       (s) =>
         Number.isFinite(s.competitor1) &&
         Number.isFinite(s.competitor2) &&
-        (s.competitor1 > 0 || s.competitor2 > 0),
+        (s.competitor1 > 0 || s.competitor2 > 0 || isByeMatch),
     )
     .sort((a, b) => a.set - b.set);
+
+  if (isByeMatch) {
+    const zeroScores =
+      setScores.length > 0
+        ? setScores.map((s) => ({
+            set: s.set,
+            competitor1: 0,
+            competitor2: 0,
+          }))
+        : [
+            { set: 1, competitor1: 0, competitor2: 0 },
+            { set: 2, competitor1: 0, competitor2: 0 },
+            { set: 3, competitor1: 0, competitor2: 0 },
+          ];
+    return {
+      winnerId,
+      resultType: "bye",
+      setsPlayer1: 0,
+      setsPlayer2: 0,
+      setScores: zeroScores,
+    };
+  }
+
+  const loserId = winnerId === p1 ? p2 : p1;
 
   const special =
     match.status === "retired" ||
     match.status === "walkover" ||
+    match.status === "bye" ||
     match.status === "disqualified"
       ? resultTypeFromStatus(match.status)
       : null;
@@ -769,9 +836,19 @@ function buildResultPayload(match: {
   if (special && special !== "normal") {
     return {
       winnerId,
-      loserId: loserId || undefined,
+      loserId: special === "bye" ? undefined : loserId || undefined,
       resultType: special,
-      setScores: setScores.length ? setScores : undefined,
+      ...(special === "bye"
+        ? {
+            setsPlayer1: 0,
+            setsPlayer2: 0,
+            setScores: [
+              { set: 1, competitor1: 0, competitor2: 0 },
+              { set: 2, competitor1: 0, competitor2: 0 },
+              { set: 3, competitor1: 0, competitor2: 0 },
+            ],
+          }
+        : { setScores: setScores.length ? setScores : undefined }),
     };
   }
 
@@ -858,26 +935,36 @@ export async function saveMatchesBatch(
     );
 
     const scheduledAt = match.fixture_date || null;
-    const competitor1Id = match.player1_id?.trim() || null;
-    const competitor2Id = match.player2_id?.trim() || null;
+    const side1 = sideFromUi(match.player1_id);
+    const side2 = sideFromUi(match.player2_id);
+    const competitor1Id = side1.competitorId;
+    const competitor2Id = side2.competitorId;
+    const isByeMatch = side1.entryType === "bye" || side2.entryType === "bye";
+    const hasRealPair = Boolean(competitor1Id && competitor2Id);
     const winnerToMatchId = match.next_match_id?.trim() || null;
+
+    let shellStatus: string = "pending_competitors";
+    if (hasRealPair || (isByeMatch && (competitor1Id || competitor2Id))) {
+      if (match.winner_id && isByeMatch) {
+        shellStatus = "bye";
+      } else if (match.winner_id && match.status === "scheduled") {
+        shellStatus = "finished";
+      } else {
+        shellStatus = fromBoMatchStatus(match.status);
+      }
+    }
 
     const body = {
       roundId: round.id,
       bracketPosition: match.slot,
       competitor1Id,
       competitor2Id,
+      competitor1EntryType: side1.entryType,
+      competitor2EntryType: side2.entryType,
       scheduledAt,
       // BFF requires timezone whenever scheduledAt is set.
       timezone: scheduledAt ? "utc" : null,
-      status:
-        competitor1Id && competitor2Id
-          ? fromBoMatchStatus(
-              match.winner_id && match.status === "scheduled"
-                ? "finished"
-                : match.status,
-            )
-          : "pending_competitors",
+      status: shellStatus,
       winnerToMatchId,
       winnerToPosition:
         match.next_slot === "player1"

@@ -19,8 +19,12 @@ export type TennisMatchBoStatus =
   | "finished"
   | "retired"
   | "walkover"
+  | "bye"
   | "disqualified"
   | "cancelled";
+
+/** UI sentinel for an empty bye opponent (never had a rival). Not a player id. */
+export const BYE_PLAYER_ID = "__bye__";
 
 export type TennisPlayerGender = "male" | "female";
 
@@ -79,12 +83,19 @@ export interface TennisMatch {
   slot: number;
   player1_id: string | null;
   player2_id: string | null;
+  /** API entry type; `bye` with null player id = empty bye side. */
+  player1_entry_type?: string | null;
+  player2_entry_type?: string | null;
   winner_id: string | null;
   next_match_id: string | null;
   next_slot: "player1" | "player2" | null;
   fixture_date: string | null;
   status: TennisMatchBoStatus;
   sets: Array<{ player1: number | null; player2: number | null }>;
+}
+
+export function isByePlayerId(id: string | null | undefined): boolean {
+  return id === BYE_PLAYER_ID;
 }
 
 /**
@@ -143,6 +154,7 @@ export const MATCH_STATUS_LABEL: Record<TennisMatchBoStatus, string> = {
   finished: "Finalizado",
   retired: "Retirado",
   walkover: "Walkover",
+  bye: "Bye",
   disqualified: "Descalificado",
   cancelled: "Cancelado",
 };

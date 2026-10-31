@@ -81,6 +81,10 @@ Recibe `{ league: { name, type, logo }, country: { name, code, flag }, organizat
 
 Actualiza nombre, tipo, logo, país y organización. Reenvía las temporadas que ya tenía la liga.
 
+#### `DELETE /leagues?id={id}`
+
+Elimina una liga.
+
 #### `GET /teams?league={leagueId}`
 
 Lista los equipos de una liga. En maestros se llama por cada liga del alcance (país / organización / liga).
@@ -298,6 +302,14 @@ Lee la liga y, con ella, sus temporadas (año, inicio, fin, si es la vigente).
 #### `POST /leagues`
 
 Crea una competición desde operación. Mismo cuerpo que en maestros.
+
+#### `PATCH /leagues?id={id}`
+
+Asigna organización (y país) a una liga huérfana desde el bucket «Sin organización deportiva».
+
+#### `DELETE /leagues?id={id}`
+
+Elimina una liga (individual o en lote desde el bucket «Sin organización deportiva»).
 
 #### `GET /leagues/seasons`
 
@@ -672,7 +684,9 @@ Lista los partidos de la edición.
 
 Crea un partido del cuadro.
 
-Recibe `{ roundId, bracketPosition, competitor1Id, competitor2Id, scheduledAt, timezone, status, winnerToMatchId, winnerToPosition }`. Si hay fecha, `timezone` va en `utc`. Si falta un jugador, `status` es `pending_competitors`.
+Recibe `{ roundId, bracketPosition, competitor1Id, competitor2Id, competitor1EntryType, competitor2EntryType, scheduledAt, timezone, status, winnerToMatchId, winnerToPosition }`. Si hay fecha, `timezone` va en `utc`. Si falta un jugador (y no es bye), `status` es `pending_competitors`.
+
+**Bye (R1):** en la UI el analista elige un jugador vs `BYE` (nunca hubo rival; distinto de walkover). El BO envía el lado vacío con `competitorId: null` y `entryType: "bye"`, y el lado real con el jugador. Solo aplica en la primera ronda.
 
 #### `PATCH /tennis/matches/{id}`
 
@@ -686,6 +700,8 @@ Elimina un partido quitado del cuadro.
 
 #### `POST /tennis/matches/{id}/result`
 
-Registra el resultado cuando el partido queda finalizado, retirado, walkover o descalificado. La API avanza al ganador al partido enlazado (`winnerToMatchId` / `winnerToPosition`) si el cuadro ya está cableado.
+Registra el resultado cuando el partido queda finalizado, retirado, walkover, bye o descalificado. La API avanza al ganador al partido enlazado (`winnerToMatchId` / `winnerToPosition`) si el cuadro ya está cableado.
 
-Recibe `{ winnerId, loserId, resultType, setsPlayer1, setsPlayer2, setScores }`. `resultType` es `normal`, `retirement`, `walkover` o `disqualification`. Para `normal`, `setsPlayer1` y `setsPlayer2` son obligatorios (el BO los deriva del marcador o usa 2–0 si solo hay ganador). `setScores` es opcional: lista `{ set, competitor1, competitor2 }`.
+Recibe `{ winnerId, loserId, resultType, setsPlayer1, setsPlayer2, setScores }`. `resultType` es `normal`, `retirement`, `walkover`, `bye` o `disqualification`. Para `normal`, `setsPlayer1` y `setsPlayer2` son obligatorios (el BO los deriva del marcador o usa 2–0 si solo hay ganador). `setScores` es opcional: lista `{ set, competitor1, competitor2 }`.
+
+Para `bye`: un solo competidor real (el otro slot vacío con `entryType: bye`), `winnerId` es ese jugador, sin `loserId`, y los puntajes de sets van en 0.

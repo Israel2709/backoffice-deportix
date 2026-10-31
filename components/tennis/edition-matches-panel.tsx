@@ -13,6 +13,8 @@ import {
   updateEdition,
 } from "@/lib/api/admin-tennis";
 import {
+  BYE_PLAYER_ID,
+  isByePlayerId,
   MATCH_STATUS_LABEL,
   playerDisplayName,
   type TennisMatchBoStatus,
@@ -118,6 +120,59 @@ function emptyMatchRow(round: DrawRound, slot: number): MatchRow {
     status: "scheduled",
     sets: emptySetSlots(),
   };
+}
+
+/** Zero set scores for bye resolution (winner advances without playing). */
+function zeroedSets(count = DEFAULT_SET_SLOTS): SetScoreInput[] {
+  return Array.from({ length: count }, () => ({ p1: "0", p2: "0" }));
+}
+
+function realPlayerId(id: string): string {
+  return id && !isByePlayerId(id) ? id : "";
+}
+
+/** After picking A vs BYE (or BYE vs A), lock winner + zeros + status bye. */
+function applyByeResolution(row: MatchRow): MatchRow {
+  const p1Bye = isByePlayerId(row.player1_id);
+  const p2Bye = isByePlayerId(row.player2_id);
+  if (p1Bye && p2Bye) {
+    return {
+      ...row,
+      player2_id: "",
+      winner_id: "",
+      status: "scheduled",
+      sets: emptySetSlots(row.sets.length),
+    };
+  }
+  if (!p1Bye && !p2Bye) {
+    if (row.status !== "bye") return row;
+    return {
+      ...row,
+      status: "scheduled",
+      sets: emptySetSlots(Math.max(row.sets.length, DEFAULT_SET_SLOTS)),
+    };
+  }
+  const winner = p1Bye
+    ? realPlayerId(row.player2_id)
+    : realPlayerId(row.player1_id);
+  return {
+    ...row,
+    winner_id: winner,
+    status: winner ? "bye" : row.status === "bye" ? "scheduled" : row.status,
+    sets: winner
+      ? zeroedSets(Math.max(row.sets.length, DEFAULT_SET_SLOTS))
+      : row.sets,
+  };
+}
+
+function playerSlotLabel(
+  playerId: string,
+  playersById: Map<string, TennisPlayer>,
+): string {
+  if (isByePlayerId(playerId)) return "BYE";
+  const player = playerId ? playersById.get(playerId) : undefined;
+  if (player) return playerDisplayName(player);
+  return playerId || "Por definir";
 }
 
 /** Fills missing slots per round from participants_count; keeps extra existing rows. */
@@ -396,22 +451,27 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
   ): TennisPlayer[] {
     const roundOrder = rows[rowIndex]?.round_order ?? null;
     // A player can appear in later rounds after winning; only block duplicates in the same round.
+    // BYE is not a player and may appear in many R1 slots.
     const usedInRound = new Set(
       rows.flatMap((r, i) => {
         if (i === rowIndex) return [];
         if ((r.round_order ?? null) !== roundOrder) return [];
-        return [r.player1_id, r.player2_id].filter(Boolean);
+        return [r.player1_id, r.player2_id].filter(
+          (id) => Boolean(id) && !isByePlayerId(id),
+        );
       }),
     );
 
+    const otherReal = realPlayerId(otherIdInMatch);
     const available = selectablePlayers.filter((p) => {
       if (p.id === selectedId) return true;
-      if (otherIdInMatch && p.id === otherIdInMatch) return false;
+      if (otherReal && p.id === otherReal) return false;
       return !usedInRound.has(p.id);
     });
 
     if (
       selectedId &&
+      !isByePlayerId(selectedId) &&
       !available.some((p) => p.id === selectedId) &&
       !selectablePlayers.some((p) => p.id === selectedId)
     ) {
@@ -527,11 +587,25 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
       const current = prev[index];
       if (!current) return prev;
       // From R2 on, competitors come from prior-round winners — not manual picks.
+      // BYE is only assignable in R1.
       const lockedPlayers = (current.round_order ?? 0) > 1;
       const safePatch: Partial<MatchRow> = { ...patch };
       if (lockedPlayers) {
         delete safePatch.player1_id;
         delete safePatch.player2_id;
+      } else {
+        if (
+          safePatch.player1_id === BYE_PLAYER_ID &&
+          (current.round_order ?? 0) !== 1
+        ) {
+          delete safePatch.player1_id;
+        }
+        if (
+          safePatch.player2_id === BYE_PLAYER_ID &&
+          (current.round_order ?? 0) !== 1
+        ) {
+          delete safePatch.player2_id;
+        }
       }
       if (Object.keys(safePatch).length === 0) return prev;
 
@@ -541,19 +615,20 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
       if (safePatch.round_order !== undefined) {
         return renumberSlotsByRound(next);
       }
-      // Clear winner if it no longer matches either competitor.
       if (
         safePatch.player1_id !== undefined ||
         safePatch.player2_id !== undefined
       ) {
-        const row = next[index];
+        let row = next[index]!;
+        // Clear winner if it no longer matches a real competitor.
         if (
           row.winner_id &&
-          row.winner_id !== row.player1_id &&
-          row.winner_id !== row.player2_id
+          row.winner_id !== realPlayerId(row.player1_id) &&
+          row.winner_id !== realPlayerId(row.player2_id)
         ) {
-          next[index] = { ...row, winner_id: "" };
+          row = { ...row, winner_id: "" };
         }
+        next[index] = applyByeResolution(row);
       }
       return next;
     });
@@ -735,14 +810,12 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
                         },
                       ] as const
                     ).map((slot) => {
-                      const player = slot.playerId
-                        ? playersById.get(slot.playerId)
-                        : undefined;
-                      const label = player
-                        ? playerDisplayName(player)
-                        : slot.playerId
-                          ? slot.playerId
-                          : "Por definir";
+                      const label = playerSlotLabel(
+                        slot.playerId,
+                        playersById,
+                      );
+                      const allowBye =
+                        !playersLocked && (row.round_order ?? 0) === 1;
                       return (
                         <div
                           key={slot.field}
@@ -782,6 +855,9 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
                               }
                             >
                               <option value="">—</option>
+                              {allowBye ? (
+                                <option value={BYE_PLAYER_ID}>BYE</option>
+                              ) : null}
                               {playersForSelect(
                                 slot.playerId,
                                 index,
@@ -823,6 +899,9 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
                         const key = `${index}-s${setIndex}-p1`;
                         const focused = focusedScoreKey === key;
                         const empty = set.p1 === "";
+                        const byeMatch =
+                          isByePlayerId(row.player1_id) ||
+                          isByePlayerId(row.player2_id);
                         return (
                           <TextInput
                             key={key}
@@ -833,7 +912,7 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
                             )}
                             inputMode="numeric"
                             aria-label={`Set ${setIndex + 1} jugador 1`}
-                            disabled={busy}
+                            disabled={busy || byeMatch}
                             value={focused ? set.p1 : empty ? "—" : set.p1}
                             onFocus={() => setFocusedScoreKey(key)}
                             onBlur={() =>
@@ -861,6 +940,9 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
                         const key = `${index}-s${setIndex}-p2`;
                         const focused = focusedScoreKey === key;
                         const empty = set.p2 === "";
+                        const byeMatch =
+                          isByePlayerId(row.player1_id) ||
+                          isByePlayerId(row.player2_id);
                         return (
                           <TextInput
                             key={key}
@@ -871,7 +953,7 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
                             )}
                             inputMode="numeric"
                             aria-label={`Set ${setIndex + 1} jugador 2`}
-                            disabled={busy}
+                            disabled={busy || byeMatch}
                             value={focused ? set.p2 : empty ? "—" : set.p2}
                             onFocus={() => setFocusedScoreKey(key)}
                             onBlur={() =>
@@ -964,7 +1046,7 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
                   >
                     <option value="">—</option>
                     {[row.player1_id, row.player2_id]
-                      .filter(Boolean)
+                      .filter((id) => Boolean(id) && !isByePlayerId(id))
                       .map((id) => {
                         const p = playersById.get(id);
                         return (
@@ -987,11 +1069,20 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
                   >
                     {(
                       Object.keys(MATCH_STATUS_LABEL) as TennisMatchBoStatus[]
-                    ).map((key) => (
-                      <option key={key} value={key}>
-                        {MATCH_STATUS_LABEL[key]}
-                      </option>
-                    ))}
+                    )
+                      .filter((key) => {
+                        // Bye status only when a side is BYE (never had a rival).
+                        if (key !== "bye") return true;
+                        return (
+                          isByePlayerId(row.player1_id) ||
+                          isByePlayerId(row.player2_id)
+                        );
+                      })
+                      .map((key) => (
+                        <option key={key} value={key}>
+                          {MATCH_STATUS_LABEL[key]}
+                        </option>
+                      ))}
                   </TextSelect>
                 </td>
                 <td className="border-b border-dx-line px-2 py-2 align-middle">
@@ -1034,9 +1125,9 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
       <Note>
         Las rondas se calculan con la cantidad de participantes del torneo.
         En la primera ronda los contrincantes se eligen entre{" "}
-        <b>Participantes</b>; desde la segunda se llenan solos con los ganadores
-        de la ronda anterior (no se editan a mano). Cada partido trae 3 sets;
-        puedes agregar hasta 5 con <b>+</b>.
+        <b>Participantes</b> o <b>BYE</b> (sin rival; el jugador avanza con sets
+        en 0). Desde la segunda se llenan solos con los ganadores de la ronda
+        anterior. Cada partido trae 3 sets; puedes agregar hasta 5 con <b>+</b>.
       </Note>
       {selectablePlayers.length === 0 ? (
         <Note>

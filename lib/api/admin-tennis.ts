@@ -889,29 +889,77 @@ function buildResultPayload(match: {
   };
 }
 
+type MatchBatchItem = {
+  id?: string;
+  round_name: string;
+  round_order: number;
+  slot: number;
+  player1_id?: string | null;
+  player2_id?: string | null;
+  winner_id?: string | null;
+  next_match_id?: string | null;
+  next_slot?: "player1" | "player2" | null;
+  fixture_date?: string | null;
+  status: TennisMatchBoStatus;
+  sets?: Array<{
+    set?: number;
+    player1: number | null;
+    player2: number | null;
+  }>;
+};
+
+function matchShellBody(
+  match: MatchBatchItem,
+  roundId: string,
+): Record<string, unknown> {
+  const scheduledAt = match.fixture_date || null;
+  const side1 = sideFromUi(match.player1_id);
+  const side2 = sideFromUi(match.player2_id);
+  const competitor1Id = side1.competitorId;
+  const competitor2Id = side2.competitorId;
+  const isByeMatch = side1.entryType === "bye" || side2.entryType === "bye";
+  const hasRealPair = Boolean(competitor1Id && competitor2Id);
+  const winnerToMatchId = match.next_match_id?.trim() || null;
+
+  let shellStatus: string = "pending_competitors";
+  if (hasRealPair || (isByeMatch && (competitor1Id || competitor2Id))) {
+    if (match.winner_id && isByeMatch) {
+      shellStatus = "bye";
+    } else if (match.winner_id && match.status === "scheduled") {
+      shellStatus = "finished";
+    } else {
+      shellStatus = fromBoMatchStatus(match.status);
+    }
+  }
+
+  return {
+    roundId,
+    bracketPosition: match.slot,
+    competitor1Id,
+    competitor2Id,
+    competitor1EntryType: side1.entryType,
+    competitor2EntryType: side2.entryType,
+    scheduledAt,
+    // BFF requires timezone whenever scheduledAt is set.
+    timezone: scheduledAt ? "utc" : null,
+    status: shellStatus,
+    winnerToMatchId,
+    winnerToPosition:
+      match.next_slot === "player1"
+        ? "competitor_1"
+        : match.next_slot === "player2"
+          ? "competitor_2"
+          : null,
+  };
+}
+
 export async function saveMatchesBatch(
   editionId: string,
-  matches: Array<{
-    id?: string;
-    round_name: string;
-    round_order: number;
-    slot: number;
-    player1_id?: string | null;
-    player2_id?: string | null;
-    winner_id?: string | null;
-    next_match_id?: string | null;
-    next_slot?: "player1" | "player2" | null;
-    fixture_date?: string | null;
-    status: TennisMatchBoStatus;
-    sets?: Array<{
-      set?: number;
-      player1: number | null;
-      player2: number | null;
-    }>;
-  }>,
+  matches: MatchBatchItem[],
   options?: { deleteIds?: string[] },
 ): Promise<{ data: TennisMatch[]; propagated: number }> {
-  for (const id of options?.deleteIds ?? []) {
+  const explicitDeletes = [...new Set(options?.deleteIds ?? [])];
+  for (const id of explicitDeletes) {
     await deleteEditionMatch(id);
   }
 
@@ -920,59 +968,76 @@ export async function saveMatchesBatch(
     rounds.map((r) => [`${r.roundNumber}:${r.name}`, r]),
   );
 
-  const pendingResults: Array<{
-    matchId: string;
-    payload: NonNullable<ReturnType<typeof buildResultPayload>>;
-  }> = [];
-
-  // 1) Upsert match shells (competitors + schedule) so bracket links can resolve.
+  // Resolve rounds up front so collision cleanup can key by roundNumber.
+  const roundByOrder = new Map<number, BffRound>();
   for (const match of matches) {
+    if (roundByOrder.has(match.round_order)) continue;
     const round = await ensureRound(
       editionId,
       match.round_name,
       match.round_order,
       roundCache,
     );
+    roundByOrder.set(match.round_order, round);
+  }
 
-    const scheduledAt = match.fixture_date || null;
-    const side1 = sideFromUi(match.player1_id);
-    const side2 = sideFromUi(match.player2_id);
-    const competitor1Id = side1.competitorId;
-    const competitor2Id = side2.competitorId;
-    const isByeMatch = side1.entryType === "bye" || side2.entryType === "bye";
-    const hasRealPair = Boolean(competitor1Id && competitor2Id);
-    const winnerToMatchId = match.next_match_id?.trim() || null;
+  const keepIds = new Set(
+    matches.flatMap((match) => (match.id ? [match.id] : [])),
+  );
 
-    let shellStatus: string = "pending_competitors";
-    if (hasRealPair || (isByeMatch && (competitor1Id || competitor2Id))) {
-      if (match.winner_id && isByeMatch) {
-        shellStatus = "bye";
-      } else if (match.winner_id && match.status === "scheduled") {
-        shellStatus = "finished";
-      } else {
-        shellStatus = fromBoMatchStatus(match.status);
-      }
+  // Drop any leftover server match that sits on a slot we are about to write
+  // but is not the row we intend to keep (stale shells from oversized draws).
+  const { data: serverMatches } = await listEditionMatches(editionId);
+  const collisionDeletes: string[] = [];
+  for (const match of matches) {
+    for (const existing of serverMatches) {
+      if (existing.round_order !== match.round_order) continue;
+      if (existing.slot !== match.slot) continue;
+      if (match.id && existing.id === match.id) continue;
+      if (keepIds.has(existing.id)) continue;
+      collisionDeletes.push(existing.id);
     }
+  }
+  for (const id of [...new Set(collisionDeletes)]) {
+    if (explicitDeletes.includes(id)) continue;
+    await deleteEditionMatch(id);
+  }
 
-    const body = {
-      roundId: round.id,
-      bracketPosition: match.slot,
-      competitor1Id,
-      competitor2Id,
-      competitor1EntryType: side1.entryType,
-      competitor2EntryType: side2.entryType,
-      scheduledAt,
-      // BFF requires timezone whenever scheduledAt is set.
-      timezone: scheduledAt ? "utc" : null,
-      status: shellStatus,
-      winnerToMatchId,
-      winnerToPosition:
-        match.next_slot === "player1"
-          ? "competitor_1"
-          : match.next_slot === "player2"
-            ? "competitor_2"
-            : null,
-    };
+  const pendingResults: Array<{
+    matchId: string;
+    payload: NonNullable<ReturnType<typeof buildResultPayload>>;
+  }> = [];
+
+  const withIds = matches.filter(
+    (match): match is MatchBatchItem & { id: string } => Boolean(match.id),
+  );
+
+  // Park existing rows on temporary unique positions so sequential PATCH/POST
+  // never hits "bracketPosition must be unique within the round".
+  for (let i = 0; i < withIds.length; i += 1) {
+    const match = withIds[i]!;
+    const round = roundByOrder.get(match.round_order);
+    if (!round) continue;
+    await bffRequest(`${PREFIX}/matches/${encodeURIComponent(match.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        roundId: round.id,
+        bracketPosition: 100_000 + i,
+      }),
+    });
+  }
+
+  // Final upsert at the intended bracket positions.
+  for (const match of matches) {
+    const round =
+      roundByOrder.get(match.round_order) ??
+      (await ensureRound(
+        editionId,
+        match.round_name,
+        match.round_order,
+        roundCache,
+      ));
+    const body = matchShellBody(match, round.id);
 
     let matchId = match.id;
     if (matchId) {

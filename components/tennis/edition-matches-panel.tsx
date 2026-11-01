@@ -187,8 +187,8 @@ function isEmptyMatchShell(row: MatchRow): boolean {
 
 /**
  * Builds exactly `matchCount` slots per round (R1 = participants/2).
- * Drops extras beyond capacity (prefer keeping filled matches) and returns
- * discarded API ids so the panel can delete stale shells.
+ * Keeps the match already at each slot when possible (avoids renumber clashes
+ * on save). Drops extras with slot outside 1..matchCount and duplicate slots.
  */
 function ensureBracketRows(
   existing: MatchRow[],
@@ -202,33 +202,42 @@ function ensureBracketRows(
   const plannedOrders = new Set(rounds.map((r) => r.order));
   const result: MatchRow[] = [];
   const discardedIds: string[] = [];
+  const keptIds = new Set<string>();
 
   for (const round of rounds) {
-    const inRound = existing
-      .filter((row) => (row.round_order ?? 0) === round.order)
-      .sort((a, b) => {
-        const aFilled = Number(!isEmptyMatchShell(a));
-        const bFilled = Number(!isEmptyMatchShell(b));
-        if (bFilled !== aFilled) return bFilled - aFilled;
-        return a.slot - b.slot;
-      });
-
-    const kept = inRound.slice(0, round.matchCount);
-    for (const row of inRound.slice(round.matchCount)) {
-      if (row.id) discardedIds.push(row.id);
-    }
+    const inRound = existing.filter(
+      (row) => (row.round_order ?? 0) === round.order,
+    );
 
     for (let slot = 1; slot <= round.matchCount; slot += 1) {
-      const row = kept[slot - 1];
-      if (row) {
+      const atSlot = inRound
+        .filter((row) => row.slot === slot)
+        .sort((a, b) => {
+          const aFilled = Number(!isEmptyMatchShell(a));
+          const bFilled = Number(!isEmptyMatchShell(b));
+          if (bFilled !== aFilled) return bFilled - aFilled;
+          return (a.id ?? "").localeCompare(b.id ?? "");
+        });
+      const best = atSlot[0];
+      for (const dup of atSlot.slice(1)) {
+        if (dup.id) discardedIds.push(dup.id);
+      }
+      if (best) {
+        if (best.id) keptIds.add(best.id);
         result.push({
-          ...row,
+          ...best,
           round_order: round.order,
-          round_name: row.round_name?.trim() ? row.round_name : round.name,
+          round_name: best.round_name?.trim() ? best.round_name : round.name,
           slot,
         });
       } else {
         result.push(emptyMatchRow(round, slot));
+      }
+    }
+
+    for (const row of inRound) {
+      if (row.slot < 1 || row.slot > round.matchCount) {
+        if (row.id) discardedIds.push(row.id);
       }
     }
   }
@@ -240,8 +249,8 @@ function ensureBracketRows(
   }
 
   return {
-    rows: renumberSlotsByRound(result),
-    discardedIds: [...new Set(discardedIds)],
+    rows: result,
+    discardedIds: [...new Set(discardedIds)].filter((id) => !keptIds.has(id)),
   };
 }
 
@@ -579,9 +588,16 @@ export function EditionMatchesPanel({ editionId }: { editionId: string }) {
   async function persistMatches() {
     const baselineRows = JSON.parse(baseline) as MatchRow[];
     const currentIds = new Set(rows.flatMap((r) => (r.id ? [r.id] : [])));
-    const deleteIds = baselineRows
-      .flatMap((r) => (r.id ? [r.id] : []))
-      .filter((id) => !currentIds.has(id));
+    // Delete anything not in the current UI rows: trimmed extras from baseline
+    // and any stale server shells that survived an earlier oversized draw.
+    const deleteIds = [
+      ...new Set([
+        ...baselineRows.flatMap((r) => (r.id && !currentIds.has(r.id) ? [r.id] : [])),
+        ...(matchesQuery.data?.data ?? []).flatMap((m) =>
+          !currentIds.has(m.id) ? [m.id] : [],
+        ),
+      ]),
+    ];
     const toSave = rowsToPersist(rows, baselineRows);
     return saveMatchesBatch(
       editionId,

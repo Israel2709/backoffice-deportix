@@ -163,18 +163,44 @@ export function seasonIdFor(leagueId: string, year: number): string {
   return `${leagueId}:${year}`;
 }
 
+/** Fully unwrap over-encoded route params (`%3A` → `%253A` → `%25253A`…). */
+export function decodeRouteParam(value: string): string {
+  let current = value;
+  for (let i = 0; i < 8; i++) {
+    if (!/%[0-9A-Fa-f]{2}/.test(current)) return current;
+    try {
+      const next = decodeURIComponent(current);
+      if (next === current) return current;
+      current = next;
+    } catch {
+      return current;
+    }
+  }
+  return current;
+}
+
+/**
+ * Canonical `leagueId:year` for Next.js Link hrefs.
+ * Pass the raw colon form — Link encodes once; pre-encoding causes `%25253A`.
+ */
+export function normalizeSeasonIdParam(seasonId: string): string {
+  const { leagueId, year } = parseSeasonId(seasonId);
+  return seasonIdFor(leagueId, year);
+}
+
 export function parseSeasonId(seasonId: string): {
   leagueId: string;
   year: number;
 } {
-  const idx = seasonId.lastIndexOf(":");
+  const decoded = decodeRouteParam(seasonId);
+  const idx = decoded.lastIndexOf(":");
   if (idx <= 0) {
     throw new Error(
       `Invalid season id "${seasonId}". Expected format leagueId:year.`,
     );
   }
-  const leagueId = seasonId.slice(0, idx);
-  const year = Number(seasonId.slice(idx + 1));
+  const leagueId = decoded.slice(0, idx);
+  const year = Number(decoded.slice(idx + 1));
   if (!leagueId || !Number.isFinite(year)) {
     throw new Error(
       `Invalid season id "${seasonId}". Expected format leagueId:year.`,

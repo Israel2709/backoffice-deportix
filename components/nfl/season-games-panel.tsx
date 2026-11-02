@@ -2,6 +2,7 @@
 import { LoadingBlock } from "@/components/ui/spinner";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -40,6 +41,81 @@ type GameRow = {
   week: string;
 };
 
+type SortColumn =
+  | "week"
+  | "date"
+  | "time"
+  | "home"
+  | "away"
+  | "status"
+  | "score_home"
+  | "score_away";
+
+type SortState = { column: SortColumn; direction: "asc" | "desc" };
+
+function gameDateTimeKey(row: GameRow): string {
+  if (!row.date) return "9999-99-99T99:99";
+  return `${row.date}T${row.time || "00:00"}`;
+}
+
+function compareGameRows(
+  a: GameRow,
+  b: GameRow,
+  sort: SortState,
+  teamsById: Map<string, NflTeam>,
+): number {
+  const dir = sort.direction === "asc" ? 1 : -1;
+  let cmp = 0;
+  switch (sort.column) {
+    case "week":
+      cmp = a.week.localeCompare(b.week, undefined, { numeric: true });
+      break;
+    case "date":
+      cmp = gameDateTimeKey(a).localeCompare(gameDateTimeKey(b));
+      break;
+    case "time":
+      cmp = (a.time || "").localeCompare(b.time || "");
+      break;
+    case "home":
+      cmp = (teamsById.get(a.home_team_id)
+        ? teamDisplayName(teamsById.get(a.home_team_id)!)
+        : a.home_team_id
+      ).localeCompare(
+        teamsById.get(b.home_team_id)
+          ? teamDisplayName(teamsById.get(b.home_team_id)!)
+          : b.home_team_id,
+        "es",
+        { sensitivity: "base" },
+      );
+      break;
+    case "away":
+      cmp = (teamsById.get(a.away_team_id)
+        ? teamDisplayName(teamsById.get(a.away_team_id)!)
+        : a.away_team_id
+      ).localeCompare(
+        teamsById.get(b.away_team_id)
+          ? teamDisplayName(teamsById.get(b.away_team_id)!)
+          : b.away_team_id,
+        "es",
+        { sensitivity: "base" },
+      );
+      break;
+    case "status":
+      cmp = a.status.localeCompare(b.status);
+      break;
+    case "score_home":
+      cmp = Number(a.score_home || -1) - Number(b.score_home || -1);
+      break;
+    case "score_away":
+      cmp = Number(a.score_away || -1) - Number(b.score_away || -1);
+      break;
+    default:
+      cmp = 0;
+  }
+  if (cmp !== 0) return cmp * dir;
+  return gameDateTimeKey(a).localeCompare(gameDateTimeKey(b));
+}
+
 const inputClass =
   "w-full min-w-0 rounded-[7px] border border-[#d9e0ea] bg-white px-2 py-1.5 text-[13px] text-[#243147]";
 
@@ -49,6 +125,10 @@ export function SeasonGamesPanel({ seasonId }: { seasonId: string }) {
   const [baseline, setBaseline] = useState("[]");
   const [roundFilter, setRoundFilter] = useState<string>("all");
   const [weekFilter, setWeekFilter] = useState<string>("all");
+  const [sort, setSort] = useState<SortState>({
+    column: "date",
+    direction: "asc",
+  });
 
   const gamesQuery = useQuery({
     queryKey: ["admin", "nfl", "games", seasonId],
@@ -114,6 +194,8 @@ export function SeasonGamesPanel({ seasonId }: { seasonId: string }) {
         week: g.game?.week ?? round?.name ?? "",
       };
     });
+    // Default load order: nearest kickoff first.
+    next.sort((a, b) => gameDateTimeKey(a).localeCompare(gameDateTimeKey(b)));
     setRows(next);
     setBaseline(JSON.stringify(next));
   }, [gamesQuery.data, roundsQuery.data]);
@@ -122,12 +204,55 @@ export function SeasonGamesPanel({ seasonId }: { seasonId: string }) {
   useDirtyGuard(dirty);
 
   const visibleRows = useMemo(() => {
-    return rows.filter((row) => {
+    const filtered = rows.filter((row) => {
       if (roundFilter !== "all" && row.round_id !== roundFilter) return false;
       if (weekFilter !== "all" && row.week !== weekFilter) return false;
       return true;
     });
-  }, [rows, roundFilter, weekFilter]);
+    return [...filtered].sort((a, b) =>
+      compareGameRows(a, b, sort, teamsById),
+    );
+  }, [rows, roundFilter, weekFilter, sort, teamsById]);
+
+  function toggleSort(column: SortColumn) {
+    setSort((prev) => {
+      if (prev.column !== column) return { column, direction: "asc" };
+      if (prev.direction === "asc") return { column, direction: "desc" };
+      return { column: "date", direction: "asc" };
+    });
+  }
+
+  function SortHeader({
+    column,
+    label,
+    className,
+  }: {
+    column: SortColumn;
+    label: string;
+    className?: string;
+  }) {
+    const active = sort.column === column;
+    return (
+      <th className={cn("border-b border-dx-line px-2 py-2.5", className)}>
+        <button
+          type="button"
+          onClick={() => toggleSort(column)}
+          className="inline-flex items-center gap-1.5 text-[11px] font-extrabold tracking-wide text-[#667085] uppercase hover:text-dx-blue"
+        >
+          {label}
+          {active ? (
+            sort.direction === "asc" ? (
+              <ArrowUp className="h-3.5 w-3.5 text-dx-blue" />
+            ) : (
+              <ArrowDown className="h-3.5 w-3.5 text-dx-blue" />
+            )
+          ) : (
+            <ArrowUpDown className="h-3.5 w-3.5 opacity-40" />
+          )}
+        </button>
+      </th>
+    );
+  }
 
   const saveMutation = useMutation({
     mutationFn: () =>
@@ -186,6 +311,14 @@ export function SeasonGamesPanel({ seasonId }: { seasonId: string }) {
     return <LoadingBlock label="Cargando partidos…" />;
   }
 
+  if (gamesQuery.isError) {
+    return (
+      <div className="rounded-xl border border-[#f1dfa9] bg-[#fff9e8] px-3.5 py-3 text-[13px] text-[#7d5a00]">
+        {(gamesQuery.error as Error).message}
+      </div>
+    );
+  }
+
   const currentRound = roundsQuery.data?.data.find((r) => r.id === roundFilter);
 
   return (
@@ -236,18 +369,20 @@ export function SeasonGamesPanel({ seasonId }: { seasonId: string }) {
         <table className="w-full min-w-[1040px] border-separate border-spacing-0 text-left text-[13px]">
           <thead>
             <tr className="bg-[#f8fafc] text-[11px] tracking-wide text-[#667085] uppercase">
-              <th className="border-b border-dx-line px-2 py-2.5">Semana</th>
-              <th className="border-b border-dx-line px-2 py-2.5">Fecha</th>
-              <th className="border-b border-dx-line px-2 py-2.5">Hora</th>
+              <SortHeader column="week" label="Semana" />
+              <SortHeader column="date" label="Fecha" />
+              <SortHeader column="time" label="Hora" />
               <th className="border-b border-dx-line px-2 py-2.5">Logo L</th>
-              <th className="border-b border-dx-line px-2 py-2.5">Local</th>
-              <th className="border-b border-dx-line px-2 py-2.5">SL</th>
-              <th className="border-b border-dx-line px-2 py-2.5">SV</th>
-              <th className="border-b border-dx-line px-2 py-2.5 text-right">
-                Visitante
-              </th>
+              <SortHeader column="home" label="Local" />
+              <SortHeader column="score_home" label="SL" />
+              <SortHeader column="score_away" label="SV" />
+              <SortHeader
+                column="away"
+                label="Visitante"
+                className="text-right"
+              />
               <th className="border-b border-dx-line px-2 py-2.5">Logo V</th>
-              <th className="border-b border-dx-line px-2 py-2.5">Estado</th>
+              <SortHeader column="status" label="Estado" />
             </tr>
           </thead>
           <tbody>
@@ -380,9 +515,9 @@ export function SeasonGamesPanel({ seasonId }: { seasonId: string }) {
       </div>
 
       <Note>
-        Orden visual: Semana → Logo Local → Local → SL → SV → Visitante → Logo
-        Visitante. Marcadores por puntos (no goles). Guardado consolidado por
-        lote.
+        Por defecto se ordenan del partido más próximo al más lejano. Clic en
+        una columna para ordenar. Marcadores por puntos (no goles). Guardado
+        consolidado por lote.
       </Note>
 
       <StickyActions

@@ -754,6 +754,71 @@ export async function deleteEditionMatch(matchId: string): Promise<void> {
   });
 }
 
+async function listRawEditionMatches(editionId: string): Promise<BffMatch[]> {
+  const response = await bffRequest<BffMatch[]>(
+    `${PREFIX}/tournaments/${encodeURIComponent(editionId)}/matches`,
+  );
+  return asList(response);
+}
+
+/**
+ * Clear winner/source pointers that reference matches about to be deleted,
+ * then delete. Required because the BFF rejects deletes of bracket-linked rows.
+ */
+async function unlinkAndDeleteMatches(
+  editionId: string,
+  deleteIds: string[],
+): Promise<void> {
+  const unique = [...new Set(deleteIds.filter(Boolean))];
+  if (unique.length === 0) return;
+  const doomed = new Set(unique);
+
+  const siblings = await listRawEditionMatches(editionId);
+  for (const match of siblings) {
+    if (doomed.has(match.id)) continue;
+    const bracket = match.bracket ?? {
+      competitor1SourceMatchId: null,
+      competitor2SourceMatchId: null,
+      winnerToMatchId: null,
+      winnerToPosition: null,
+    };
+    const clearWinner =
+      Boolean(bracket.winnerToMatchId) &&
+      doomed.has(String(bracket.winnerToMatchId));
+    const clearSource1 =
+      Boolean(bracket.competitor1SourceMatchId) &&
+      doomed.has(String(bracket.competitor1SourceMatchId));
+    const clearSource2 =
+      Boolean(bracket.competitor2SourceMatchId) &&
+      doomed.has(String(bracket.competitor2SourceMatchId));
+    if (!clearWinner && !clearSource1 && !clearSource2) continue;
+
+    await bffRequest(`${PREFIX}/matches/${encodeURIComponent(match.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        ...(clearWinner
+          ? { winnerToMatchId: null, winnerToPosition: null }
+          : {}),
+        ...(clearSource1 ? { competitor1SourceMatchId: null } : {}),
+        ...(clearSource2 ? { competitor2SourceMatchId: null } : {}),
+      }),
+    });
+  }
+
+  // Later rounds first so any residual forward links are less likely to block.
+  const byRoundDesc = [...siblings]
+    .filter((m) => doomed.has(m.id))
+    .sort((a, b) => b.roundNumber - a.roundNumber || b.bracketPosition - a.bracketPosition);
+  const orderedIds = [
+    ...byRoundDesc.map((m) => m.id),
+    ...unique.filter((id) => !byRoundDesc.some((m) => m.id === id)),
+  ];
+
+  for (const id of orderedIds) {
+    await deleteEditionMatch(id);
+  }
+}
+
 function buildResultPayload(match: {
   player1_id?: string | null;
   player2_id?: string | null;
@@ -958,11 +1023,6 @@ export async function saveMatchesBatch(
   matches: MatchBatchItem[],
   options?: { deleteIds?: string[] },
 ): Promise<{ data: TennisMatch[]; propagated: number }> {
-  const explicitDeletes = [...new Set(options?.deleteIds ?? [])];
-  for (const id of explicitDeletes) {
-    await deleteEditionMatch(id);
-  }
-
   const rounds = await listRounds(editionId);
   const roundCache = new Map(
     rounds.map((r) => [`${r.roundNumber}:${r.name}`, r]),
@@ -998,10 +1058,12 @@ export async function saveMatchesBatch(
       collisionDeletes.push(existing.id);
     }
   }
-  for (const id of [...new Set(collisionDeletes)]) {
-    if (explicitDeletes.includes(id)) continue;
-    await deleteEditionMatch(id);
-  }
+
+  const allDeletes = [
+    ...new Set([...(options?.deleteIds ?? []), ...collisionDeletes]),
+  ];
+  // Unlink bracket pointers first — BFF blocks delete while a match is referenced.
+  await unlinkAndDeleteMatches(editionId, allDeletes);
 
   const pendingResults: Array<{
     matchId: string;

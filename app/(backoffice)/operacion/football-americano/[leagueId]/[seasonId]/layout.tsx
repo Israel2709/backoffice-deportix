@@ -5,6 +5,7 @@ import { use } from "react";
 import { getAdminLeague, getAdminSeason } from "@/lib/api/admin-nfl";
 import {
   SEASON_STATUS_LABEL,
+  normalizeSeasonIdParam,
   seasonLabel,
 } from "@/lib/api/nfl-types";
 import { NflSeasonTabs } from "@/components/nfl/nfl-season-tabs";
@@ -18,7 +19,8 @@ export default function NflSeasonLayout({
   children: React.ReactNode;
   params: Promise<{ leagueId: string; seasonId: string }>;
 }) {
-  const { leagueId, seasonId } = use(params);
+  const { leagueId, seasonId: rawSeasonId } = use(params);
+  const seasonId = normalizeSeasonIdParam(rawSeasonId);
   const leagueQuery = useQuery({
     queryKey: ["admin", "nfl", "leagues", leagueId],
     queryFn: () => getAdminLeague(leagueId),

@@ -432,11 +432,17 @@ Lista los partidos.
 
 Crea un partido.
 
-Recibe `game` (semana, fecha, hora, zona, estado), `league` (id, nombre, temporada, logo), `teams.home` y `teams.away` (id, nombre, logo) y `scores.home.total` / `scores.away.total`.
+Recibe `game` (`stage`, semana, fecha, hora, zona, estado), `league` (id, nombre, temporada, logo), `teams.home` y `teams.away` (id, nombre, logo) y `scores.home.total` / `scores.away.total`.
+
+`game.stage` usa el catálogo `GET /v1/game-stages` (`Pre Season`, `Regular Season`, `Post Season`, `Wild Card`, `Divisional Round`, `Conference Championships`, `Super Bowl`). Si viene vacío o ausente, la API persiste `Pre Season`.
 
 #### `PATCH /american-football/games/{id}`
 
 Actualiza un partido. Mismo cuerpo que el alta.
+
+#### `GET /v1/game-stages`
+
+Catálogo global de etapas NFL (`value` + `label`) para el dropdown de partidos.
 
 #### `GET /american-football/standings?league={leagueId}&season={year}`
 

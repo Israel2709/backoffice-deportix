@@ -13,10 +13,13 @@ import {
   saveGamesBatch,
 } from "@/lib/api/admin-nfl";
 import {
+  DEFAULT_NFL_GAME_STAGE,
   GAME_STATUS_LABEL,
+  NFL_GAME_STAGE_OPTIONS,
   teamAbbrev,
   teamDisplayName,
   type GameBoStatus,
+  type NflGameStage,
   type NflTeam,
 } from "@/lib/api/nfl-types";
 import { useDirtyGuard } from "@/hooks/use-dirty-guard";
@@ -35,6 +38,7 @@ type GameRow = {
   date: string;
   time: string;
   status: GameBoStatus;
+  stage: NflGameStage | string;
   score_home: string;
   score_away: string;
   round_id: string;
@@ -43,6 +47,7 @@ type GameRow = {
 
 type SortColumn =
   | "week"
+  | "stage"
   | "date"
   | "time"
   | "home"
@@ -69,6 +74,9 @@ function compareGameRows(
   switch (sort.column) {
     case "week":
       cmp = a.week.localeCompare(b.week, undefined, { numeric: true });
+      break;
+    case "stage":
+      cmp = a.stage.localeCompare(b.stage);
       break;
     case "date":
       cmp = gameDateTimeKey(a).localeCompare(gameDateTimeKey(b));
@@ -186,6 +194,7 @@ export function SeasonGamesPanel({ seasonId }: { seasonId: string }) {
         date,
         time,
         status: g.bo_status ?? "scheduled",
+        stage: g.game?.stage?.trim() || DEFAULT_NFL_GAME_STAGE,
         score_home:
           g.scores?.home?.total == null ? "" : String(g.scores.home.total),
         score_away:
@@ -264,6 +273,7 @@ export function SeasonGamesPanel({ seasonId }: { seasonId: string }) {
           away_team_id: row.away_team_id,
           game_date: combineUtcDateTime(row.date, row.time),
           status: row.status,
+          stage: row.stage || DEFAULT_NFL_GAME_STAGE,
           score_home: row.score_home === "" ? null : Number(row.score_home),
           score_away: row.score_away === "" ? null : Number(row.score_away),
           round_id: row.round_id || null,
@@ -299,6 +309,7 @@ export function SeasonGamesPanel({ seasonId }: { seasonId: string }) {
         date: "",
         time: "",
         status: "scheduled",
+        stage: DEFAULT_NFL_GAME_STAGE,
         score_home: "",
         score_away: "",
         round_id: firstRound?.id ?? "",
@@ -366,10 +377,11 @@ export function SeasonGamesPanel({ seasonId }: { seasonId: string }) {
       </div>
 
       <div className="overflow-x-auto rounded-[14px] border border-dx-line bg-white">
-        <table className="w-full min-w-[1040px] border-separate border-spacing-0 text-left text-[13px]">
+        <table className="w-full min-w-[1180px] border-separate border-spacing-0 text-left text-[13px]">
           <thead>
             <tr className="bg-[#f8fafc] text-[11px] tracking-wide text-[#667085] uppercase">
               <SortHeader column="week" label="Semana" />
+              <SortHeader column="stage" label="Etapa" />
               <SortHeader column="date" label="Fecha" />
               <SortHeader column="time" label="Hora" />
               <th className="border-b border-dx-line px-2 py-2.5">Logo L</th>
@@ -400,6 +412,22 @@ export function SeasonGamesPanel({ seasonId }: { seasonId: string }) {
                         updateRow(row.key, { week: e.target.value })
                       }
                     />
+                  </td>
+                  <td className="border-b border-dx-line px-2 py-1.5">
+                    <select
+                      className={cn(inputClass, "min-w-[148px]")}
+                      value={row.stage}
+                      tabIndex={1}
+                      onChange={(e) =>
+                        updateRow(row.key, { stage: e.target.value })
+                      }
+                    >
+                      {NFL_GAME_STAGE_OPTIONS.map((stage) => (
+                        <option key={stage.value} value={stage.value}>
+                          {stage.label}
+                        </option>
+                      ))}
+                    </select>
                   </td>
                   <td className="border-b border-dx-line px-2 py-1.5">
                     <input

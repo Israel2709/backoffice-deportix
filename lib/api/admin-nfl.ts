@@ -17,7 +17,11 @@ import type {
   NflTeam,
   SeasonStatus,
 } from "./nfl-types";
-import { parseSeasonId, seasonIdFor } from "./nfl-types";
+import {
+  DEFAULT_NFL_GAME_STAGE,
+  parseSeasonId,
+  seasonIdFor,
+} from "./nfl-types";
 
 export type { GameBoStatus, SeasonStatus };
 
@@ -262,7 +266,10 @@ function mapGame(raw: BffGameItem, seasonId: string, leagueId: string): NflGame 
         logo: raw.teams?.away?.logo ?? null,
       },
     },
-    game: { week: raw.game?.week ?? null },
+    game: {
+      week: raw.game?.week ?? null,
+      stage: raw.game?.stage?.trim() || DEFAULT_NFL_GAME_STAGE,
+    },
   };
 }
 
@@ -725,8 +732,9 @@ export async function listParticipants(seasonId: string): List<NflParticipant> {
 
 export async function replaceParticipants(
   seasonId: string,
-  _teamIds: string[],
+  teamIds: string[],
 ): List<NflParticipant> {
+  void teamIds;
   return listParticipants(seasonId);
 }
 
@@ -739,8 +747,9 @@ export async function listRounds(seasonId: string): List<NflRound> {
 
 export async function replaceRounds(
   seasonId: string,
-  _rounds: Array<{ name: string; position: number; phase?: string | null }>,
+  rounds: Array<{ name: string; position: number; phase?: string | null }>,
 ): List<NflRound> {
+  void rounds;
   return listRounds(seasonId);
 }
 
@@ -768,6 +777,7 @@ export async function saveGamesBatch(
     score_away?: number | null;
     round_id?: string | null;
     week?: string | null;
+    stage?: string | null;
   }>,
 ): List<NflGame> {
   const { leagueId, year } = parseSeasonId(seasonId);
@@ -784,6 +794,7 @@ export async function saveGamesBatch(
 
     const body = {
       game: {
+        stage: game.stage?.trim() || DEFAULT_NFL_GAME_STAGE,
         week: game.week || game.round_id || null,
         date: {
           date: datePart,

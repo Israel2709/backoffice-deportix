@@ -10,6 +10,25 @@ export type GameBoStatus =
   | "finished"
   | "cancelled";
 
+/** api-sports American Football `game.stage` values (catalog `/v1/game-stages`). */
+export const NFL_GAME_STAGE_OPTIONS = [
+  { value: "Pre Season", label: "Pretemporada" },
+  { value: "Regular Season", label: "Temporada regular" },
+  { value: "Post Season", label: "Postemporada" },
+  { value: "Wild Card", label: "Wild Card" },
+  { value: "Divisional Round", label: "Divisional" },
+  { value: "Conference Championships", label: "Finales de conferencia" },
+  { value: "Super Bowl", label: "Super Bowl" },
+] as const;
+
+export type NflGameStage = (typeof NFL_GAME_STAGE_OPTIONS)[number]["value"];
+
+export const DEFAULT_NFL_GAME_STAGE: NflGameStage = "Pre Season";
+
+export const NFL_GAME_STAGE_LABEL: Record<NflGameStage, string> = Object.fromEntries(
+  NFL_GAME_STAGE_OPTIONS.map((o) => [o.value, o.label]),
+) as Record<NflGameStage, string>;
+
 /** Country catalog entry. MVP keys updates by `name` (or `code`); use that as `id`. */
 export interface NflCountry {
   id: string;
@@ -95,7 +114,7 @@ export interface NflGame {
     home: { name: string; logo: string | null };
     away: { name: string; logo: string | null };
   };
-  game?: { week: string | null };
+  game?: { week: string | null; stage: string | null };
 }
 
 export interface NflStanding {

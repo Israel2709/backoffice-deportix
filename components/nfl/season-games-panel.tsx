@@ -264,10 +264,19 @@ export function SeasonGamesPanel({ seasonId }: { seasonId: string }) {
   }
 
   const saveMutation = useMutation({
-    mutationFn: () =>
-      saveGamesBatch(
+    mutationFn: () => {
+      const baselineRows = JSON.parse(baseline) as GameRow[];
+      const baselineByKey = new Map(baselineRows.map((row) => [row.key, row]));
+      const toPersist = rows.filter((row) => {
+        if (!row.id) return true;
+        const original = baselineByKey.get(row.key);
+        if (!original) return true;
+        return JSON.stringify(row) !== JSON.stringify(original);
+      });
+
+      return saveGamesBatch(
         seasonId,
-        rows.map((row) => ({
+        toPersist.map((row) => ({
           id: row.id,
           home_team_id: row.home_team_id,
           away_team_id: row.away_team_id,
@@ -279,7 +288,8 @@ export function SeasonGamesPanel({ seasonId }: { seasonId: string }) {
           round_id: row.round_id || null,
           week: row.week.trim() || null,
         })),
-      ),
+      );
+    },
     onSuccess: () => {
       toast.success("Partidos guardados");
       setBaseline(JSON.stringify(rows));

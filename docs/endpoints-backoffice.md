@@ -434,7 +434,7 @@ Crea un partido.
 
 Recibe `game` (`stage`, semana, fecha, hora, zona, estado), `league` (id, nombre, temporada, logo), `teams.home` y `teams.away` (id, nombre, logo) y `scores.home.total` / `scores.away.total`.
 
-`game.stage` usa el catálogo `GET /v1/game-stages` (`Pre Season`, `Regular Season`, `Post Season`, `Wild Card`, `Divisional Round`, `Conference Championships`, `Super Bowl`). Si viene vacío o ausente, la API persiste `Pre Season`.
+`game.stage` usa el catálogo `GET /v1/game-stages` (`Pre Season`, `Regular Season`, `Post Season`, `Wild Card`, `Divisional Round`, `Conference Championships`, `Super Bowl`). Si viene vacío o ausente, la API persiste `Regular Season`.
 
 #### `PATCH /american-football/games/{id}`
 

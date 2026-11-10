@@ -23,7 +23,7 @@ export const NFL_GAME_STAGE_OPTIONS = [
 
 export type NflGameStage = (typeof NFL_GAME_STAGE_OPTIONS)[number]["value"];
 
-export const DEFAULT_NFL_GAME_STAGE: NflGameStage = "Pre Season";
+export const DEFAULT_NFL_GAME_STAGE: NflGameStage = "Regular Season";
 
 export const NFL_GAME_STAGE_LABEL: Record<NflGameStage, string> = Object.fromEntries(
   NFL_GAME_STAGE_OPTIONS.map((o) => [o.value, o.label]),

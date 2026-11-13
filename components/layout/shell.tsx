@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/components/auth/auth-provider";
 
 const NAV = [
   { href: "/", label: "Inicio", match: (path: string) => path === "/" },
@@ -21,6 +22,8 @@ const NAV = [
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const { user, logout } = useAuth();
+  const label = user?.email ?? "Administrador";
 
   return (
     <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[240px_1fr]">
@@ -60,22 +63,34 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </nav>
       </aside>
       <main className="px-5 py-5 md:px-9 md:py-[30px] md:pb-[50px]">
-        <div className="mb-4 flex gap-2 overflow-x-auto lg:hidden">
-          {NAV.map((item) => {
-            const active = item.match(pathname);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "whitespace-nowrap rounded-[10px] border border-dx-line bg-white px-3 py-2 text-sm font-semibold text-[#445067]",
-                  active && "border-[#c9d7ef] bg-[#edf4ff] text-dx-blue",
-                )}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="flex gap-2 overflow-x-auto lg:hidden">
+            {NAV.map((item) => {
+              const active = item.match(pathname);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "whitespace-nowrap rounded-[10px] border border-dx-line bg-white px-3 py-2 text-sm font-semibold text-[#445067]",
+                    active && "border-[#c9d7ef] bg-[#edf4ff] text-dx-blue",
+                  )}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+          </div>
+          <div className="ml-auto flex items-center gap-2 text-sm font-semibold text-[#445067]">
+            <span className="hidden sm:inline">{label}</span>
+            <button
+              type="button"
+              onClick={() => void logout()}
+              className="rounded-[10px] border border-dx-line bg-white px-3 py-2 text-sm font-semibold text-[#445067] hover:border-[#c9d7ef] hover:bg-[#edf4ff] hover:text-dx-blue"
+            >
+              Cerrar sesión
+            </button>
+          </div>
         </div>
         {children}
       </main>

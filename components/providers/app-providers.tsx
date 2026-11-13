@@ -3,6 +3,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Suspense, useState } from "react";
 import { Toaster } from "sonner";
+import { AuthProvider } from "@/components/auth/auth-provider";
 import { NavigationProgress } from "@/components/layout/navigation-progress";
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
@@ -21,11 +22,13 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <Suspense fallback={null}>
-        <NavigationProgress />
-      </Suspense>
-      {children}
-      <Toaster richColors position="top-right" />
+      <AuthProvider>
+        <Suspense fallback={null}>
+          <NavigationProgress />
+        </Suspense>
+        {children}
+        <Toaster richColors position="top-right" />
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

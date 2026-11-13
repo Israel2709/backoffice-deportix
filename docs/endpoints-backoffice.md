@@ -11,6 +11,15 @@ Las rutas están agrupadas como la navegación del producto: primero **Datos mae
 - En tenis, los listados de jugadores, ediciones, rondas y participantes agregan `published=all` para ver borradores y publicados. Los partidos no usan ese filtro.
 - `POST /v1/uploads` sube un archivo (`multipart`: `file`, `purpose`, `entityId` opcional) y devuelve la URL. Lo usan los logos de organización y equipo de fútbol, el logo al crear una competición de fútbol, y el logo de una competición de Fórmula 1.
 
+### Autenticación (BO)
+
+- El operador inicia sesión en `/login` (Firebase email/password).
+- El proxy adjunta `Authorization: Bearer <Firebase ID token>` en **POST / PUT / PATCH / DELETE** (incluida la subida a `/v1/uploads`).
+- Sin token válido la API responde **401 `UNAUTHORIZED`** en escrituras. Los **GET** siguen públicos para App QD.
+- Rutas locales de sesión (no van a la API DeportiX):
+  - `POST /api/auth/session` — guarda el ID token en cookie httpOnly.
+  - `DELETE /api/auth/session` — cierra sesión.
+
 ---
 
 ## Datos maestros

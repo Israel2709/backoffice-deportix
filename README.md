@@ -29,12 +29,24 @@ Variables:
 # Local — apunta al API en tu máquina
 DEPORTIX_API_BASE_URL=http://localhost:3001
 ADMIN_API_KEY=dev-local-key
+
+# Firebase Auth (mismo proyecto que la API)
+NEXT_PUBLIC_FIREBASE_API_KEY=…
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=….firebaseapp.com
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=…
 ```
 
 Si no defines `DEPORTIX_API_BASE_URL`, el proxy usa `https://deportix-api.vercel.app`.
 En **Vercel**, ese es el destino por defecto; un valor `localhost` en variables de entorno se ignora.
 
 La API key **nunca** se expone al browser: el BFF en `/api/proxy/*` la inyecta solo para rutas `/admin/*`.
+
+### Autenticación
+
+- Login en `/login` con correo y contraseña (Firebase Authentication).
+- El middleware bloquea el BO sin cookie de sesión.
+- Las escrituras del proxy envían `Authorization: Bearer <idToken>` a la API.
+- Los `GET` públicos de App QD no requieren login de operador.
 
 ## Desarrollo
 
@@ -58,7 +70,7 @@ Abre [http://localhost:3000](http://localhost:3000).
 - Inicio: health, stats, sync jobs/logs
 - Hubs por deporte con listados read-only desde `/api`
 - Stubs de captura profunda
-- **Sin login** (auth diferida)
+- Login Firebase (correo/contraseña) + proxy con Bearer en mutaciones
 
 ## Fase 2 (API — lista)
 

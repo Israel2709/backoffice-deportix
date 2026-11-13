@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { SESSION_COOKIE } from "@/lib/auth/constants";
 
 /** Paths allowed to be forwarded to the MVP Deportix API. */
 const ALLOWED_PREFIXES = [
@@ -74,6 +75,18 @@ async function forward(
 
     if (path.startsWith("admin/") && apiKey) {
       headers.set("x-admin-api-key", apiKey);
+    }
+
+    const idToken = request.cookies.get(SESSION_COOKIE)?.value;
+    const isMutation = !["GET", "HEAD"].includes(request.method);
+    if (isMutation) {
+      if (!idToken) {
+        return NextResponse.json(
+          { error: "Sesión requerida para escribir datos." },
+          { status: 401 },
+        );
+      }
+      headers.set("authorization", `Bearer ${idToken}`);
     }
 
     const init: RequestInit = {

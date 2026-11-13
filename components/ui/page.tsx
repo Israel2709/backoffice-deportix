@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { UserAccountActions } from "@/components/auth/user-account-actions";
 import { Breadcrumbs, type Crumb } from "@/components/ui/breadcrumbs";
 import { cn } from "@/lib/utils";
 
@@ -50,7 +51,10 @@ export function PageHeader({
         <div className="min-w-0">
           {items ? <Breadcrumbs items={items} /> : crumbs}
         </div>
-        <div className="shrink-0">{actions ?? autoBack}</div>
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          {actions ?? autoBack}
+          <UserAccountActions />
+        </div>
       </div>
       {children}
     </>

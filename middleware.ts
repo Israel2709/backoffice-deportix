@@ -16,6 +16,15 @@ export function middleware(request: NextRequest) {
 
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   if (!token) {
+    // API routes must never redirect to HTML login — fetch follows 307 and
+    // then JSON.parse("<!DOCTYPE…") blows up in the BO client.
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json(
+        { error: "Sesión requerida. Inicia sesión de nuevo." },
+        { status: 401 },
+      );
+    }
+
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
     loginUrl.searchParams.set("next", pathname);

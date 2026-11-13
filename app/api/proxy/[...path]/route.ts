@@ -121,15 +121,14 @@ async function forward(
     const upstreamType =
       upstream.headers.get("content-type") ?? "application/json";
 
-    if (
-      !upstream.ok &&
-      (upstreamType.includes("text/html") ||
-        body.trimStart().startsWith("<!") ||
-        body.toLowerCase().includes("<html"))
-    ) {
+    const upstreamLooksHtml =
+      upstreamType.includes("text/html") ||
+      body.trimStart().startsWith("<!") ||
+      body.toLowerCase().includes("<html");
+    if (upstreamLooksHtml) {
       return NextResponse.json(
         {
-          error: `Upstream ${upstream.status} en ${target}. Ruta no encontrada en la API MVP.`,
+          error: `Upstream ${upstream.status} HTML en ${target}. Ruta no encontrada o error del servidor en la API MVP.`,
         },
         { status: upstream.status === 404 ? 404 : 502 },
       );

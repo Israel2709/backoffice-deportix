@@ -94,7 +94,20 @@ export async function proxyJson<T>(
     return undefined as T;
   }
 
-  return JSON.parse(text) as T;
+  const trimmed = text.trim();
+  if (trimmed.startsWith("<!") || trimmed.toLowerCase().includes("<html")) {
+    throw new Error(
+      `La API/proxy devolvió HTML en lugar de JSON para /${path.replace(/^\//, "")}. Suele ser sesión expirada o ruta incorrecta — recarga e inicia sesión de nuevo.`,
+    );
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(
+      `Respuesta no JSON para /${path.replace(/^\//, "")}: ${trimmed.slice(0, 160)}`,
+    );
+  }
 }
 
 /** Unwrap `{ response: T }` BFF envelope (T may be array or scalar). */

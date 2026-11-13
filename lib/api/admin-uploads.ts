@@ -2,6 +2,9 @@
  * Upload an image to MVP `POST /v1/uploads` (multipart).
  * Fields: `file`, `purpose` (default `league_logo`).
  */
+
+import { authHeadersForMutation } from "@/lib/auth/client-token";
+
 export async function uploadAdminImage(body: {
   file: File;
   purpose?: string;
@@ -30,8 +33,10 @@ export async function uploadAdminImage(body: {
   form.append("purpose", body.purpose || body.folder || "league_logo");
   if (body.entityId) form.append("entityId", body.entityId);
 
+  const auth = await authHeadersForMutation();
   const response = await fetch("/api/proxy/v1/uploads", {
     method: "POST",
+    headers: auth,
     body: form,
     cache: "no-store",
   });

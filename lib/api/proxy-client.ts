@@ -1,11 +1,24 @@
+import { authHeadersForMutation } from "@/lib/auth/client-token";
+
+function isMutation(method: string | undefined): boolean {
+  const m = (method ?? "GET").toUpperCase();
+  return m !== "GET" && m !== "HEAD";
+}
+
 async function proxyRequest<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
+  const method = init?.method ?? "GET";
+  const mutationAuth = isMutation(method)
+    ? await authHeadersForMutation()
+    : {};
+
   const response = await fetch(`/api/proxy/${path.replace(/^\//, "")}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...mutationAuth,
       ...(init?.headers ?? {}),
     },
   });

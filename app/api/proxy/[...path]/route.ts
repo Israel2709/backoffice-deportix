@@ -77,9 +77,24 @@ async function forward(
       headers.set("x-admin-api-key", apiKey);
     }
 
-    const idToken = request.cookies.get(SESSION_COOKIE)?.value;
     const isMutation = !["GET", "HEAD"].includes(request.method);
     if (isMutation) {
+      // Prefer Authorization from the browser (fresh Firebase ID token).
+      // Cookie is a fallback for middleware/session; JWTs in cookies can get
+      // mangled and then fail API verifyIdToken as "Invalid or expired…".
+      const incoming = request.headers.get("authorization");
+      const incomingBearer = incoming
+        ? /^Bearer\s+(.+)$/i.exec(incoming.trim())?.[1]?.trim()
+        : null;
+      let cookieToken = request.cookies.get(SESSION_COOKIE)?.value ?? null;
+      if (cookieToken) {
+        try {
+          cookieToken = decodeURIComponent(cookieToken);
+        } catch {
+          // keep raw value
+        }
+      }
+      const idToken = incomingBearer || cookieToken;
       if (!idToken) {
         return NextResponse.json(
           { error: "Sesión requerida para escribir datos." },

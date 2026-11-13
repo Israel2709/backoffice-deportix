@@ -1,5 +1,10 @@
 import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
-import { getAuth, type Auth } from "firebase/auth";
+import {
+  browserLocalPersistence,
+  getAuth,
+  setPersistence,
+  type Auth,
+} from "firebase/auth";
 
 /**
  * Next.js only inlines `NEXT_PUBLIC_*` when accessed with a static property name
@@ -37,6 +42,7 @@ export function getFirebaseApp(): FirebaseApp {
 export function getFirebaseAuth(): Auth {
   if (auth) return auth;
   auth = getAuth(getFirebaseApp());
+  void setPersistence(auth, browserLocalPersistence);
   return auth;
 }
 

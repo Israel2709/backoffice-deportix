@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SESSION_COOKIE } from "@/lib/auth/constants";
+import { ID_TOKEN_HEADER, SESSION_COOKIE } from "@/lib/auth/constants";
 
 /** Paths allowed to be forwarded to the MVP Deportix API. */
 const ALLOWED_PREFIXES = [
@@ -79,25 +79,22 @@ async function forward(
 
     const isMutation = !["GET", "HEAD"].includes(request.method);
     if (isMutation) {
-      // Prefer Authorization from the browser (fresh Firebase ID token).
-      // Cookie is a fallback for middleware/session; JWTs in cookies can get
-      // mangled and then fail API verifyIdToken as "Invalid or expired…".
+      // Never use the session cookie as API Bearer — JWTs in cookies get mangled
+      // and fail verifyIdToken. Require a fresh token from the browser.
+      const fromCustom = request.headers.get(ID_TOKEN_HEADER)?.trim() || null;
       const incoming = request.headers.get("authorization");
-      const incomingBearer = incoming
-        ? /^Bearer\s+(.+)$/i.exec(incoming.trim())?.[1]?.trim()
+      const fromBearer = incoming
+        ? /^Bearer\s+(.+)$/i.exec(incoming.trim())?.[1]?.trim() || null
         : null;
-      let cookieToken = request.cookies.get(SESSION_COOKIE)?.value ?? null;
-      if (cookieToken) {
-        try {
-          cookieToken = decodeURIComponent(cookieToken);
-        } catch {
-          // keep raw value
-        }
-      }
-      const idToken = incomingBearer || cookieToken;
-      if (!idToken) {
+      const idToken = fromCustom || fromBearer;
+      if (!idToken || idToken.split(".").length !== 3) {
+        const hasSession = Boolean(request.cookies.get(SESSION_COOKIE)?.value);
         return NextResponse.json(
-          { error: "Sesión requerida para escribir datos." },
+          {
+            error: hasSession
+              ? "Sesión de página activa, pero no hay token Firebase usable para guardar. Recarga e inicia sesión de nuevo."
+              : "Sesión requerida para escribir datos.",
+          },
           { status: 401 },
         );
       }

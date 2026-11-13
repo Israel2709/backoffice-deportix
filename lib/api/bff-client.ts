@@ -2,6 +2,7 @@
  * Low-level helpers for the MVP Deportix API (api-sports BFF + /v1 envelopes).
  */
 
+import { ID_TOKEN_HEADER } from "@/lib/auth/constants";
 import { authHeadersForMutation } from "@/lib/auth/client-token";
 
 export type BffEnvelope<T> = {
@@ -40,10 +41,15 @@ export async function proxyRaw(
     headers.set("Accept", "application/json");
   }
 
-  if (isMutation(init?.method) && !headers.has("Authorization")) {
+  if (
+    isMutation(init?.method) &&
+    !headers.has("Authorization") &&
+    !headers.has(ID_TOKEN_HEADER)
+  ) {
     const auth = await authHeadersForMutation();
-    const bearer = new Headers(auth).get("Authorization");
-    if (bearer) headers.set("Authorization", bearer);
+    for (const [key, value] of Object.entries(auth)) {
+      headers.set(key, value);
+    }
   }
 
   return fetch(`/api/proxy/${path.replace(/^\//, "")}`, {

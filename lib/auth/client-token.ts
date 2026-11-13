@@ -2,11 +2,12 @@ import {
   getFirebaseAuth,
   isFirebaseClientConfigured,
 } from "@/lib/firebase/client";
+import { ID_TOKEN_HEADER } from "@/lib/auth/constants";
 
 /**
  * Fresh Firebase ID token for BO → proxy → API writes.
- * Prefer this over the httpOnly cookie alone: cookies can mangle/truncate JWTs,
- * which surfaces as API `Invalid or expired authentication token`.
+ * Do not rely on the httpOnly session cookie as Bearer: JWTs in cookies often
+ * get mangled and fail API `verifyIdToken`.
  */
 export async function getClientIdToken(
   forceRefresh = false,
@@ -25,8 +26,16 @@ export async function getClientIdToken(
 }
 
 /** Headers to attach on mutating proxy calls. */
-export async function authHeadersForMutation(): Promise<HeadersInit> {
-  const idToken = await getClientIdToken(false);
+export async function authHeadersForMutation(): Promise<Record<string, string>> {
+  // Force refresh reduces "invalid/expired" right after login/race with cookie.
+  let idToken = await getClientIdToken(true);
+  if (!idToken) {
+    idToken = await getClientIdToken(false);
+  }
   if (!idToken) return {};
-  return { Authorization: `Bearer ${idToken}` };
+
+  return {
+    Authorization: `Bearer ${idToken}`,
+    [ID_TOKEN_HEADER]: idToken,
+  };
 }

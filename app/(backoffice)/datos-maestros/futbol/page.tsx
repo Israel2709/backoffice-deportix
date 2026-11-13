@@ -15,7 +15,7 @@ export default function FutbolMaestrosPage() {
         <Hero
           eyebrow="Datos Maestros · Fútbol"
           title="Fútbol"
-          description="Organizaciones, ligas / torneos, estructura deportiva y equipos. La temporada se administra en Operación Deportiva."
+          description="Organizaciones, ligas / torneos, equipos y catálogos. La temporada se administra en Operación Deportiva."
         />
       </PageHeader>
 
@@ -33,21 +33,15 @@ export default function FutbolMaestrosPage() {
           cta="Administrar →"
         />
         <ClickCard
-          href="/datos-maestros/futbol/catalogos"
-          title="Catálogos"
-          description="Tipos de liga / torneo y otros valores reutilizables del deporte."
-          cta="Administrar →"
-        />
-        <ClickCard
-          href="/datos-maestros/futbol/estructura"
-          title="Estructura deportiva"
-          description="Países y competiciones asociadas a una organización."
-          cta="Administrar →"
-        />
-        <ClickCard
           href="/datos-maestros/futbol/equipos"
           title="Equipos"
           description="País → organización → liga → equipos."
+          cta="Administrar →"
+        />
+        <ClickCard
+          href="/datos-maestros/futbol/catalogos"
+          title="Catálogos"
+          description="Tipos de liga / torneo y otros valores reutilizables del deporte."
           cta="Administrar →"
         />
       </div>

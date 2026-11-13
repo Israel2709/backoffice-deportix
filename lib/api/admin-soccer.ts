@@ -454,6 +454,24 @@ export async function listAdminLeagues(): List<SoccerLeague> {
   return { data };
 }
 
+/** Leagues whose country name matches (BFF `country` substring filter). */
+export async function listLeaguesForCountry(
+  countryName: string,
+): List<SoccerLeague> {
+  const name = countryName.trim();
+  if (!name) return { data: [] };
+  const response = await bffRequest<BffLeagueEntry[]>(
+    `leagues?country=${encodeURIComponent(name)}`,
+  );
+  const data: SoccerLeague[] = [];
+  for (const entry of asList(response)) {
+    const id = leagueExternalId(entry);
+    if (!id) continue;
+    data.push(mapLeague(entry, id));
+  }
+  return { data };
+}
+
 export async function getAdminLeague(id: string): One<SoccerLeague> {
   const entry = await fetchLeagueEntry(id);
   if (!entry) throw new Error(`League not found: ${id}`);

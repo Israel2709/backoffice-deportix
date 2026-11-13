@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   createCountry,
@@ -13,6 +13,7 @@ import {
   updateCountry,
   updateLeague,
 } from "@/lib/api/admin-soccer";
+import { listLeagueTypes } from "@/lib/api/admin-catalogs";
 import type { SoccerCountry, SoccerLeague } from "@/lib/api/soccer-types";
 import { EditableDataTable } from "@/components/data/editable-data-table";
 import { Button } from "@/components/ui/button";
@@ -35,40 +36,15 @@ const countryColumns = [
   },
 ];
 
-const leagueColumns = [
-  {
-    id: "name" as const,
-    header: "Nombre",
-    placeholder: "Liga MX",
-  },
-  {
-    id: "name_alt" as const,
-    header: "Nombre alt.",
-    placeholder: "Opcional",
-  },
-  {
-    id: "organization_name" as const,
-    header: "Organización",
-    placeholder: "—",
-    editable: false,
-  },
-  {
-    id: "country_id" as const,
-    header: "País",
-    placeholder: "País / ámbito",
-  },
-  {
-    id: "type" as const,
-    header: "Tipo",
-    placeholder: "League",
-    className: "w-[120px]",
-  },
-  {
-    id: "logo" as const,
-    header: "Logo (URL)",
-    placeholder: "https://…",
-  },
-];
+function normalizeLeagueTypeCode(
+  raw: string | null | undefined,
+  codes: string[],
+): string {
+  const normalized = (raw ?? "").trim().toLowerCase();
+  if (!normalized) return codes[0] ?? "league";
+  const match = codes.find((code) => code.toLowerCase() === normalized);
+  return match ?? normalized;
+}
 
 export function StructureMasterPanel() {
   const queryClient = useQueryClient();
@@ -77,7 +53,7 @@ export function StructureMasterPanel() {
   const [leagueName, setLeagueName] = useState("");
   const [leagueNameAlt, setLeagueNameAlt] = useState("");
   const [leagueCountryId, setLeagueCountryId] = useState("");
-  const [leagueType, setLeagueType] = useState("League");
+  const [leagueType, setLeagueType] = useState("league");
   const [leagueOrganizationId, setLeagueOrganizationId] = useState("");
   const [leagueLogo, setLeagueLogo] = useState("");
   const [deletingCountryId, setDeletingCountryId] = useState<string | null>(
@@ -96,6 +72,67 @@ export function StructureMasterPanel() {
     queryKey: ["admin", "soccer", "organizations"],
     queryFn: () => listAdminOrganizations(),
   });
+  const leagueTypesQuery = useQuery({
+    queryKey: ["admin", "soccer", "catalog", "league-types"],
+    queryFn: listLeagueTypes,
+  });
+
+  const leagueTypes = leagueTypesQuery.data?.data ?? [];
+  const leagueTypeCodes = useMemo(
+    () => leagueTypes.map((item) => item.code),
+    [leagueTypes],
+  );
+  const typeLabelByCode = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const item of leagueTypes) {
+      map.set(item.code, item.label);
+    }
+    return map;
+  }, [leagueTypes]);
+
+  const leagueColumns = useMemo(
+    () => [
+      {
+        id: "name" as const,
+        header: "Nombre",
+        placeholder: "Liga MX",
+      },
+      {
+        id: "name_alt" as const,
+        header: "Nombre alt.",
+        placeholder: "Opcional",
+      },
+      {
+        id: "organization_name" as const,
+        header: "Organización",
+        placeholder: "—",
+        editable: false,
+      },
+      {
+        id: "country_id" as const,
+        header: "País",
+        placeholder: "País / ámbito",
+      },
+      {
+        id: "type" as const,
+        header: "Tipo",
+        editAs: "select" as const,
+        placeholder: "Tipo…",
+        className: "w-[160px]",
+        options: leagueTypes.map((item) => ({
+          value: item.code,
+          label: item.label,
+        })),
+        format: (value: string) => typeLabelByCode.get(value) ?? value,
+      },
+      {
+        id: "logo" as const,
+        header: "Logo (URL)",
+        placeholder: "https://…",
+      },
+    ],
+    [leagueTypes, typeLabelByCode],
+  );
 
   const getCountryValues = useCallback((row: SoccerCountry) => {
     return {
@@ -104,16 +141,17 @@ export function StructureMasterPanel() {
     };
   }, []);
 
-  const getLeagueValues = useCallback((row: SoccerLeague) => {
-    return {
+  const getLeagueValues = useCallback(
+    (row: SoccerLeague) => ({
       name: row.name ?? "",
       name_alt: row.name_alt ?? "",
       organization_name: row.organization_name ?? "",
       country_id: row.country_id ?? row.country_name ?? "",
-      type: row.type ?? "League",
+      type: normalizeLeagueTypeCode(row.type, leagueTypeCodes),
       logo: row.logo ?? "",
-    };
-  }, []);
+    }),
+    [leagueTypeCodes],
+  );
 
   const createCountryMutation = useMutation({
     mutationFn: () =>
@@ -192,7 +230,7 @@ export function StructureMasterPanel() {
         name_alt: leagueNameAlt.trim() || null,
         country_id: countryId,
         organization_id: leagueOrganizationId,
-        type: leagueType.trim() || "League",
+        type: normalizeLeagueTypeCode(leagueType, leagueTypeCodes),
         logo: leagueLogo.trim() || null,
       });
     },
@@ -202,7 +240,7 @@ export function StructureMasterPanel() {
       setLeagueNameAlt("");
       setLeagueCountryId("");
       setLeagueOrganizationId("");
-      setLeagueType("League");
+      setLeagueType(leagueTypeCodes[0] ?? "league");
       setLeagueLogo("");
       void queryClient.invalidateQueries({
         queryKey: ["admin", "soccer", "leagues"],
@@ -222,7 +260,7 @@ export function StructureMasterPanel() {
           name,
           name_alt: change.values.name_alt?.trim() || null,
           country_id: change.values.country_id?.trim() || null,
-          type: change.values.type?.trim() || "League",
+          type: normalizeLeagueTypeCode(change.values.type, leagueTypeCodes),
           logo: change.values.logo?.trim() || null,
         });
       }
@@ -341,13 +379,18 @@ export function StructureMasterPanel() {
             title="Se infiere de la organización"
           />
           <TextSelect
-            value={leagueType}
+            value={normalizeLeagueTypeCode(leagueType, leagueTypeCodes)}
             onChange={(e) => setLeagueType(e.target.value)}
           >
-            <option value="League">Liga</option>
-            <option value="Cup">Copa</option>
-            <option value="Friendly">Amistoso</option>
-            <option value="Other">Otro</option>
+            {leagueTypes.length === 0 ? (
+              <option value="league">Liga</option>
+            ) : (
+              leagueTypes.map((item) => (
+                <option key={item.code} value={item.code}>
+                  {item.label}
+                </option>
+              ))
+            )}
           </TextSelect>
           <TextInput
             placeholder="Logo URL"

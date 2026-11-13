@@ -26,7 +26,23 @@ Las rutas están agrupadas como la navegación del producto: primero **Datos mae
 
 ### Fútbol
 
-Catálogo de países, organizaciones, ligas y equipos. Pantallas: Estructura, Organizaciones y Equipos.
+Catálogo de países, organizaciones, ligas y equipos. Pantallas: Organizaciones, Ligas / torneos, Catálogos, Estructura y Equipos.
+
+#### `GET /v1/league-types`
+
+Lista tipos de liga/torneo (`league`, `cup`, …). Usado en Catálogos y en los selectores de tipo.
+
+#### `POST /v1/league-types`
+
+Crea un tipo. Recibe `{ code, label }`.
+
+#### `PATCH /v1/league-types?code={code}`
+
+Actualiza la etiqueta (y opcionalmente `sortOrder`). Recibe `{ label }`.
+
+#### `DELETE /v1/league-types?code={code}`
+
+Elimina un tipo del catálogo.
 
 #### `GET /countries`
 
@@ -75,6 +91,10 @@ Elimina una organización.
 #### `GET /leagues`
 
 Lista las ligas (estructura del deporte).
+
+#### `GET /leagues?country={name}`
+
+Lista ligas cuyo país coincide (substring). Usado en Datos maestros · Ligas / torneos tras elegir un país.
 
 #### `GET /leagues?id={id}`
 

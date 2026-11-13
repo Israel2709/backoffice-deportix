@@ -147,6 +147,18 @@ export function CompetitionsListPanel({ orgId }: { orgId: string }) {
           ? "Organización asignada"
           : `${changes.length} competiciones actualizadas`,
       );
+      // Drop assigned rows from the orphan bucket immediately (avoid stale CDN/list).
+      if (isUnassigned) {
+        const assigned = new Set(changes.map((change) => change.id));
+        queryClient.setQueryData(
+          ["admin", "soccer", "nav-leagues", orgId],
+          (prev: { data: SoccerLeague[] } | undefined) =>
+            prev
+              ? { data: prev.data.filter((league) => !assigned.has(league.id)) }
+              : prev,
+        );
+        setSelectedIds((prev) => prev.filter((id) => !assigned.has(id)));
+      }
       invalidateLeagues();
     },
     onError: (error: Error) => toast.error(error.message),

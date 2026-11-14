@@ -63,11 +63,17 @@ export function LeaguesMasterPanel() {
 
   const countryOptions = useMemo(
     () =>
-      countries.map((item) => ({
-        value: item.id,
-        label: item.code ? `${item.name} (${item.code})` : item.name,
-        meta: item.code ?? undefined,
-      })),
+      countries.map((item) => {
+        const code = item.code?.trim() || null;
+        const alreadyHasCode =
+          Boolean(code) && item.name.includes(`(${code})`);
+        return {
+          value: item.id,
+          label:
+            code && !alreadyHasCode ? `${item.name} (${code})` : item.name,
+          meta: code ?? undefined,
+        };
+      }),
     [countries],
   );
 
@@ -86,9 +92,8 @@ export function LeaguesMasterPanel() {
   });
 
   const orgsQuery = useQuery({
-    queryKey: ["admin", "soccer", "organizations", countryName],
-    queryFn: () => listAdminOrganizations(countryName),
-    enabled: Boolean(countryName),
+    queryKey: ["admin", "soccer", "organizations"],
+    queryFn: () => listAdminOrganizations(),
   });
 
   const leagueTypesQuery = useQuery({
@@ -105,19 +110,32 @@ export function LeaguesMasterPanel() {
 
   const orgOptions = useMemo(
     () =>
-      organizations.map((org) => ({
-        value: org.id,
-        label: org.abbreviation
-          ? `${org.name} (${org.abbreviation})`
-          : org.name,
-      })),
+      [...organizations]
+        .sort((a, b) => a.name.localeCompare(b.name, "es"))
+        .map((org) => {
+          const countryLabel =
+            org.country_name?.trim() || org.country_id?.trim() || "";
+          const base = org.abbreviation
+            ? `${org.name} (${org.abbreviation})`
+            : org.name;
+          return {
+            value: org.id,
+            label: countryLabel ? `${base} · ${countryLabel}` : base,
+            meta: countryLabel || undefined,
+          };
+        }),
     [organizations],
   );
 
   const orgNameById = useMemo(() => {
     const map = new Map<string, string>();
     for (const org of organizations) {
-      map.set(org.id, org.name);
+      const countryLabel =
+        org.country_name?.trim() || org.country_id?.trim() || "";
+      map.set(
+        org.id,
+        countryLabel ? `${org.name} · ${countryLabel}` : org.name,
+      );
     }
     return map;
   }, [organizations]);
@@ -197,6 +215,7 @@ export function LeaguesMasterPanel() {
         const org = organizationId
           ? organizations.find((item) => item.id === organizationId)
           : null;
+        const current = rows.find((row) => row.id === change.id);
 
         await updateLeague(change.id, {
           name,
@@ -206,9 +225,13 @@ export function LeaguesMasterPanel() {
           ),
           logo: change.values.logo?.trim() || null,
           organization_id: organizationId,
+          // Prefer the selected org's country so moving orgs across countries works.
+          // If unassigned, keep the league country (or the country being browsed).
           country_id:
             org?.country_id?.trim() ||
             org?.country_name?.trim() ||
+            current?.country_id?.trim() ||
+            current?.country_name?.trim() ||
             country?.name ||
             countryName,
         });
@@ -228,6 +251,9 @@ export function LeaguesMasterPanel() {
       });
       void queryClient.invalidateQueries({
         queryKey: ["admin", "soccer", "nav-orgs"],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["admin", "soccer", "organizations"],
       });
     },
     onError: (error: Error) => toast.error(error.message),
@@ -305,7 +331,7 @@ export function LeaguesMasterPanel() {
 
       <Note className="mt-5">
         {country
-          ? `Editando ligas de ${country.name}${country.code ? ` (${country.code})` : ""}.`
+          ? `Editando ligas de ${country.name}${country.code ? ` (${country.code})` : ""}. Puedes asignar cualquier organización registrada; el país de la liga se alinea con el de la organización.`
           : "Primero selecciona un país para cargar la tabla."}
       </Note>
     </>

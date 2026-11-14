@@ -114,11 +114,16 @@ Actualiza nombre, tipo, logo, país y organización. Reenvía las temporadas que
 
 Elimina una liga.
 
-#### `GET /teams?league={leagueId}`
+#### `GET /teams`
 
-Lista los equipos de una liga. En maestros se llama por cada liga del alcance (país / organización / liga).
+Lista equipos. Query (al menos uno de `league` | `country` | `organization`):
 
-Query opcional: `season`.
+- `league` — liga (id externo o Firestore)
+- `country` — nombre de país (agrega equipos de las ligas de ese país)
+- `organization` — id o nombre exacto de organización
+- `season` — año; **requiere** `league` (participantes de la temporada)
+
+La respuesta puede incluir `league` y `organization` en cada ítem. Datos maestros · Equipos pide con el botón **Buscar** según país / organización / liga seleccionados (un solo `GET /teams` con esos query params).
 
 #### `GET /v1/teams/{id}`
 
@@ -366,11 +371,17 @@ Lista los equipos inscritos en la temporada.
 
 Si viene vacío o falla, la pantalla usa `GET /teams?league={leagueId}&season={year}` como respaldo.
 
+El selector «Agregar» carga el catálogo con `GET /teams?organization={orgId}` (o `?league=` si la liga aún no tiene organización).
+
 #### `PUT /v1/leagues/{leagueId}/seasons/{year}/participants`
 
 Reemplaza la plantilla de la temporada.
 
 Recibe `{ team_ids: string[] }`.
+
+#### `GET /teams?league={leagueId}&season={year}`
+
+Plantilla de la temporada en una sola llamada. Usado en Partidos y Tabla para resolver nombres/logos (antes N× `GET /v1/teams/{id}`). Los ids que falten se resuelven con `GET /v1/teams/{id}`.
 
 #### `GET /fixtures/rounds?league={leagueId}&season={year}`
 

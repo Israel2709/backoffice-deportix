@@ -93,6 +93,15 @@ type BffTeamEntry = {
     logo?: string | null;
   };
   venue?: Record<string, unknown>;
+  league?: {
+    id?: number | string | null;
+    name?: string | null;
+  } | null;
+  organization?: {
+    id?: string | null;
+    name?: string | null;
+    logo?: string | null;
+  } | null;
 };
 
 type BffFixture = {
@@ -227,11 +236,21 @@ function mapSeason(
   };
 }
 
-function mapTeam(entry: BffTeamEntry, leagueId: string): SoccerTeam {
+export type SoccerTeamWithLeague = SoccerTeam & {
+  league_name: string;
+  organization_id: string | null;
+  organization_name: string | null;
+};
+
+function mapTeam(entry: BffTeamEntry, leagueId?: string): SoccerTeam {
   const id = String(entry.team.id);
+  const fromLeague =
+    entry.league?.id != null && String(entry.league.id).trim() !== ""
+      ? String(entry.league.id)
+      : "";
   return {
     id,
-    league_id: leagueId,
+    league_id: leagueId || fromLeague,
     name_short: entry.team.code ?? null,
     status: "active",
     team: {
@@ -241,6 +260,16 @@ function mapTeam(entry: BffTeamEntry, leagueId: string): SoccerTeam {
       country: entry.team.country ?? null,
       logo: entry.team.logo ?? null,
     },
+  };
+}
+
+function mapTeamWithLeague(entry: BffTeamEntry): SoccerTeamWithLeague {
+  const base = mapTeam(entry);
+  return {
+    ...base,
+    league_name: entry.league?.name?.trim() || "",
+    organization_id: entry.organization?.id?.trim() || null,
+    organization_name: entry.organization?.name?.trim() || null,
   };
 }
 
@@ -790,20 +819,77 @@ export async function deleteLeague(id: string): Promise<void> {
 
 // ─── Teams ────────────────────────────────────────────────────────────────────
 
+export type ListSoccerTeamsOpts = {
+  countryName?: string | null;
+  organizationId?: string | null;
+  leagueId?: string | null;
+  seasonYear?: number | null;
+};
+
+function buildTeamsQuery(opts: ListSoccerTeamsOpts): URLSearchParams | null {
+  const qs = new URLSearchParams();
+  const country = opts.countryName?.trim();
+  const organizationId = opts.organizationId?.trim();
+  const leagueId = opts.leagueId?.trim();
+  if (country) qs.set("country", country);
+  if (organizationId) qs.set("organization", organizationId);
+  if (leagueId) qs.set("league", leagueId);
+  if (opts.seasonYear != null) qs.set("season", String(opts.seasonYear));
+  return [...qs.keys()].length ? qs : null;
+}
+
+/**
+ * `GET /teams` by league (optional season). Prefer {@link listSoccerTeams} when
+ * filtering by country / organization.
+ */
 export async function listAdminTeams(
   leagueId?: string,
   seasonYear?: number,
 ): List<SoccerTeam> {
-  if (leagueId) {
-    const qs = new URLSearchParams({ league: leagueId });
-    if (seasonYear != null) qs.set("season", String(seasonYear));
-    const response = await bffRequest<BffTeamEntry[]>(`teams?${qs.toString()}`);
-    return { data: asList(response).map((t) => mapTeam(t, leagueId)) };
+  if (!leagueId?.trim()) {
+    throw new Error(
+      "listAdminTeams requiere leagueId. Usa listSoccerTeams() o listTeamsByIds().",
+    );
   }
+  const qs = buildTeamsQuery({
+    leagueId,
+    seasonYear: seasonYear ?? null,
+  });
+  if (!qs) return { data: [] };
+  const response = await bffRequest<BffTeamEntry[]>(`teams?${qs.toString()}`);
+  return { data: asList(response).map((t) => mapTeam(t, leagueId)) };
+}
 
-  throw new Error(
-    "listAdminTeams requiere leagueId. Usa listTeamsByIds() para resolver equipos sueltos.",
-  );
+/**
+ * Teams via `GET /teams` with country / organization / league / season
+ * (single request; API aggregates across matching leagues).
+ */
+export async function listSoccerTeams(
+  opts: ListSoccerTeamsOpts,
+): List<SoccerTeamWithLeague> {
+  const qs = buildTeamsQuery(opts);
+  if (!qs) return { data: [] };
+
+  const response = await bffRequest<BffTeamEntry[]>(`teams?${qs.toString()}`);
+  const data = asList(response)
+    .map(mapTeamWithLeague)
+    .sort((a, b) =>
+      (a.team.name ?? "").localeCompare(b.team.name ?? "", "es"),
+    );
+  return { data };
+}
+
+/** Alias used by Datos maestros · Equipos. */
+export async function listTeamsForCountryScope(
+  opts: ListSoccerTeamsOpts,
+): List<SoccerTeamWithLeague> {
+  return listSoccerTeams(opts);
+}
+
+/** Season roster in one request: `GET /teams?league=&season=`. */
+export async function listSeasonTeams(seasonId: string): List<SoccerTeam> {
+  const { leagueId, year } = parseSeasonId(seasonId);
+  return listAdminTeams(leagueId, year);
 }
 
 type V1Team = {

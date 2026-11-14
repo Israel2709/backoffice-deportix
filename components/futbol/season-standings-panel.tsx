@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   listParticipants,
+  listSeasonTeams,
   listStandings,
   listTeamsByIds,
   replaceStandings,
@@ -58,21 +59,39 @@ export function SeasonStandingsPanel({ seasonId }: { seasonId: string }) {
     return [...ids];
   }, [participantsQuery.data, standingsQuery.data]);
 
-  const teamsQuery = useQuery({
-    queryKey: ["admin", "soccer", "teams-by-ids", seasonId, teamIds],
-    queryFn: () => listTeamsByIds(teamIds),
-    enabled: teamIds.length > 0,
+  const seasonTeamsQuery = useQuery({
+    queryKey: ["admin", "soccer", "teams", "season", seasonId],
+    queryFn: () => listSeasonTeams(seasonId),
+  });
+
+  const missingTeamIds = useMemo(() => {
+    const known = new Set<string>();
+    for (const team of seasonTeamsQuery.data?.data ?? []) {
+      known.add(team.id);
+      const external = String(team.team.id ?? "").trim();
+      if (external) known.add(external);
+    }
+    return teamIds.filter((id) => id && !known.has(id));
+  }, [seasonTeamsQuery.data, teamIds]);
+
+  const orphanTeamsQuery = useQuery({
+    queryKey: ["admin", "soccer", "teams-by-ids", seasonId, missingTeamIds],
+    queryFn: () => listTeamsByIds(missingTeamIds),
+    enabled: missingTeamIds.length > 0,
   });
 
   const teamsById = useMemo(() => {
     const map = new Map<string, SoccerTeam>();
-    for (const team of teamsQuery.data?.data ?? []) {
+    for (const team of [
+      ...(seasonTeamsQuery.data?.data ?? []),
+      ...(orphanTeamsQuery.data?.data ?? []),
+    ]) {
       map.set(team.id, team);
       const external = String(team.team.id ?? "").trim();
       if (external) map.set(external, team);
     }
     return map;
-  }, [teamsQuery.data]);
+  }, [seasonTeamsQuery.data, orphanTeamsQuery.data]);
 
   useEffect(() => {
     const standings = standingsQuery.data?.data ?? [];
@@ -112,16 +131,27 @@ export function SeasonStandingsPanel({ seasonId }: { seasonId: string }) {
   useDirtyGuard(dirty);
 
   const saveMutation = useMutation({
-    mutationFn: () =>
-      replaceStandings(
+    mutationFn: () => {
+      const baselineRows = JSON.parse(baseline) as StandingRow[];
+      const baselineByTeam = new Map(
+        baselineRows.map((row) => [row.team_id, row]),
+      );
+      const toPersist = rows.filter((row) => {
+        const original = baselineByTeam.get(row.team_id);
+        if (!original) return true;
+        return JSON.stringify(row) !== JSON.stringify(original);
+      });
+
+      return replaceStandings(
         seasonId,
-        rows.map((row) => ({
+        toPersist.map((row) => ({
           ...row,
           wins: 0,
           draws: 0,
           losses: 0,
         })),
-      ),
+      );
+    },
     onSuccess: () => {
       toast.success("Clasificación guardada");
       setBaseline(JSON.stringify(rows));

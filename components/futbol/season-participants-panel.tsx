@@ -5,11 +5,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
-  listAdminTeams,
+  getAdminLeague,
   listParticipants,
+  listSoccerTeams,
   listTeamsByIds,
   replaceParticipants,
 } from "@/lib/api/admin-soccer";
+import { isDefaultOrganizationId } from "@/lib/api/soccer-structure";
 import {
   teamCode,
   teamDisplayName,
@@ -50,10 +52,31 @@ export function SeasonParticipantsPanel({
     enabled: participantIds.length > 0,
   });
 
-  // Catalog for "Agregar": teams linked to this competition (no global N+1).
+  const leagueQuery = useQuery({
+    queryKey: ["admin", "soccer", "leagues", leagueId],
+    queryFn: () => getAdminLeague(leagueId),
+    enabled: Boolean(leagueId),
+  });
+  const rawOrgId = leagueQuery.data?.data.organization_id?.trim() || "";
+  const organizationId =
+    rawOrgId && !isDefaultOrganizationId(rawOrgId) ? rawOrgId : null;
+
+  // Catalog for "Agregar": org-wide when possible (sister leagues), else league.
   const catalogQuery = useQuery({
-    queryKey: ["admin", "soccer", "teams", leagueId, "catalog"],
-    queryFn: () => listAdminTeams(leagueId),
+    queryKey: [
+      "admin",
+      "soccer",
+      "teams",
+      "catalog",
+      organizationId ?? leagueId,
+    ],
+    queryFn: () =>
+      listSoccerTeams(
+        organizationId
+          ? { organizationId }
+          : { leagueId },
+      ),
+    enabled: Boolean(leagueId) && !leagueQuery.isLoading,
   });
 
   useEffect(() => {
@@ -217,8 +240,10 @@ export function SeasonParticipantsPanel({
       )}
 
       <Note>
-        La lista se guarda en la temporada (`soccer_season_participants`). Si
-        falta un equipo, créalo primero en Datos Maestros · Fútbol · Equipos.
+        La lista se guarda en la temporada (`soccer_season_participants`). El
+        selector «Agregar» usa los equipos de la organización (o de la liga si
+        aún no tiene org). Si falta un equipo, créalo en Datos Maestros ·
+        Equipos.
       </Note>
 
       <StickyActions

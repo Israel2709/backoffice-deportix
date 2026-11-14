@@ -1,0 +1,410 @@
+"use client";
+
+import { useCallback, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { toast } from "sonner";
+import { FilteredSelect } from "@/components/capture/filtered-select";
+import { Field } from "@/components/capture/field";
+import { EditableDataTable } from "@/components/data/editable-data-table";
+import { Button } from "@/components/ui/button";
+import { Hero } from "@/components/ui/hero";
+import { Note } from "@/components/ui/note";
+import { PageHeader } from "@/components/ui/page";
+import { LoadingBlock } from "@/components/ui/spinner";
+import {
+  listAdminCountries,
+  listAdminOrganizations,
+  listLeaguesForCountry,
+  listSoccerTeams,
+  updateTeam,
+  type SoccerTeamWithLeague,
+} from "@/lib/api/admin-soccer";
+import {
+  findCountry,
+  leagueBelongsToCountry,
+} from "@/lib/api/soccer-structure";
+
+const COUNTRY_PARAM = "pais";
+const ORG_PARAM = "org";
+const LEAGUE_PARAM = "liga";
+
+type TeamsSearch = {
+  countryName: string;
+  organizationId: string;
+  leagueId: string;
+};
+
+function searchKey(search: TeamsSearch): string {
+  return [
+    search.countryName,
+    search.organizationId || "",
+    search.leagueId || "",
+  ].join("|");
+}
+
+export function EquiposMasterPanel() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
+
+  const selectedCountryParam = searchParams.get(COUNTRY_PARAM)?.trim() ?? "";
+  const selectedOrgId = searchParams.get(ORG_PARAM)?.trim() ?? "";
+  const selectedLeagueId = searchParams.get(LEAGUE_PARAM)?.trim() ?? "";
+
+  const [appliedSearch, setAppliedSearch] = useState<TeamsSearch | null>(null);
+
+  const countriesQuery = useQuery({
+    queryKey: ["admin", "soccer", "countries"],
+    queryFn: listAdminCountries,
+  });
+
+  const countries = useMemo(() => {
+    const rows = countriesQuery.data?.data ?? [];
+    return [...rows].sort((a, b) => a.name.localeCompare(b.name, "es"));
+  }, [countriesQuery.data]);
+
+  const country = useMemo(
+    () =>
+      selectedCountryParam
+        ? findCountry(countries, selectedCountryParam)
+        : undefined,
+    [countries, selectedCountryParam],
+  );
+  const countryName = country?.name ?? "";
+
+  const countryOptions = useMemo(
+    () =>
+      countries.map((item) => {
+        const code = item.code?.trim() || null;
+        const alreadyHasCode =
+          Boolean(code) && item.name.includes(`(${code})`);
+        return {
+          value: item.id,
+          label:
+            code && !alreadyHasCode ? `${item.name} (${code})` : item.name,
+          meta: code ?? undefined,
+        };
+      }),
+    [countries],
+  );
+
+  function patchParams(patch: Record<string, string | null>) {
+    const params = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(patch)) {
+      if (value?.trim()) params.set(key, value.trim());
+      else params.delete(key);
+    }
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, {
+      scroll: false,
+    });
+  }
+
+  function setCountryId(nextId: string) {
+    setAppliedSearch(null);
+    patchParams({
+      [COUNTRY_PARAM]: nextId || null,
+      [ORG_PARAM]: null,
+      [LEAGUE_PARAM]: null,
+    });
+  }
+
+  function setOrgId(nextId: string) {
+    setAppliedSearch(null);
+    patchParams({
+      [ORG_PARAM]: nextId || null,
+      [LEAGUE_PARAM]: null,
+    });
+  }
+
+  function setLeagueId(nextId: string) {
+    setAppliedSearch(null);
+    patchParams({ [LEAGUE_PARAM]: nextId || null });
+  }
+
+  const leaguesQuery = useQuery({
+    queryKey: ["admin", "soccer", "leagues", "country", countryName],
+    queryFn: () => listLeaguesForCountry(countryName),
+    enabled: Boolean(countryName),
+  });
+
+  const orgsQuery = useQuery({
+    queryKey: ["admin", "soccer", "organizations"],
+    queryFn: () => listAdminOrganizations(),
+  });
+
+  const countryLeagues = useMemo(() => {
+    const leagues = leaguesQuery.data?.data ?? [];
+    if (!country) return leagues;
+    return leagues.filter((league) => leagueBelongsToCountry(league, country));
+  }, [leaguesQuery.data, country]);
+
+  const organizations = orgsQuery.data?.data ?? [];
+
+  const orgOptions = useMemo(() => {
+    const orgIds = new Set(
+      countryLeagues
+        .map((league) => league.organization_id?.trim())
+        .filter((id): id is string => Boolean(id)),
+    );
+    return organizations
+      .filter((org) => orgIds.has(org.id))
+      .sort((a, b) => a.name.localeCompare(b.name, "es"))
+      .map((org) => ({
+        value: org.id,
+        label: org.abbreviation
+          ? `${org.name} (${org.abbreviation})`
+          : org.name,
+      }));
+  }, [organizations, countryLeagues]);
+
+  const leagueOptions = useMemo(() => {
+    const leagues = selectedOrgId
+      ? countryLeagues.filter(
+          (league) => league.organization_id === selectedOrgId,
+        )
+      : countryLeagues;
+    return [...leagues]
+      .sort((a, b) => a.name.localeCompare(b.name, "es"))
+      .map((league) => ({
+        value: league.id,
+        label: league.name,
+      }));
+  }, [countryLeagues, selectedOrgId]);
+
+  const draftSearch = useMemo<TeamsSearch | null>(() => {
+    if (!countryName) return null;
+    return {
+      countryName,
+      organizationId: selectedOrgId,
+      leagueId: selectedLeagueId,
+    };
+  }, [countryName, selectedOrgId, selectedLeagueId]);
+
+  const draftDirty =
+    Boolean(draftSearch) &&
+    (!appliedSearch || searchKey(draftSearch!) !== searchKey(appliedSearch));
+
+  function runSearch() {
+    if (!draftSearch) {
+      toast.error("Selecciona un país antes de buscar.");
+      return;
+    }
+    setAppliedSearch(draftSearch);
+  }
+
+  const teamsQuery = useQuery({
+    queryKey: [
+      "admin",
+      "soccer",
+      "teams",
+      "search",
+      appliedSearch ? searchKey(appliedSearch) : null,
+    ],
+    queryFn: () =>
+      listSoccerTeams({
+        countryName: appliedSearch!.countryName,
+        organizationId: appliedSearch!.organizationId || null,
+        leagueId: appliedSearch!.leagueId || null,
+      }),
+    enabled: Boolean(appliedSearch?.countryName),
+  });
+
+  const rows = teamsQuery.data?.data ?? [];
+
+  const columns = useMemo(
+    () => [
+      {
+        id: "name",
+        header: "Nombre",
+        placeholder: "Nombre del equipo",
+        sortable: true,
+      },
+      {
+        id: "code",
+        header: "Código",
+        placeholder: "ABC",
+        className: "w-[120px]",
+      },
+      {
+        id: "league_name",
+        header: "Liga",
+        editable: false,
+        placeholder: "—",
+      },
+      {
+        id: "logo",
+        header: "Logo (URL)",
+        placeholder: "https://…",
+      },
+    ],
+    [],
+  );
+
+  const getValues = useCallback(
+    (row: SoccerTeamWithLeague) => ({
+      name: row.team.name ?? "",
+      code: row.team.code ?? "",
+      league_name: row.league_name ?? "",
+      logo: row.team.logo ?? "",
+    }),
+    [],
+  );
+
+  const saveMutation = useMutation({
+    mutationFn: async (
+      changes: Array<{ id: string; values: Record<string, string> }>,
+    ) => {
+      for (const change of changes) {
+        const name = change.values.name?.trim() ?? "";
+        if (!name) throw new Error("El nombre del equipo es obligatorio.");
+        const current = rows.find((row) => row.id === change.id);
+        await updateTeam(change.id, {
+          name,
+          abbreviation: change.values.code?.trim() || "",
+          name_short: change.values.code?.trim() || "",
+          logo: change.values.logo?.trim() || null,
+          country_name:
+            current?.team.country?.trim() ||
+            appliedSearch?.countryName ||
+            countryName,
+          league_id: current?.league_id,
+        });
+      }
+    },
+    onSuccess: (_data, changes) => {
+      toast.success(
+        changes.length === 1
+          ? "Equipo actualizado"
+          : `${changes.length} equipos actualizados`,
+      );
+      void queryClient.invalidateQueries({
+        queryKey: ["admin", "soccer", "teams"],
+      });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const crumbItems = [
+    { label: "Datos Maestros", href: "/datos-maestros" },
+    { label: "Fútbol", href: "/datos-maestros/futbol" },
+    ...(country ? [{ label: country.name }] : []),
+    { label: "Equipos" },
+  ];
+
+  const filtersEnabled = Boolean(country);
+  const hasApplied = Boolean(appliedSearch);
+
+  return (
+    <>
+      <PageHeader items={crumbItems} backLabel="Fútbol">
+        <Hero
+          eyebrow="Datos Maestros · Fútbol"
+          title="Equipos"
+          description="Elige país y, si quieres, organización o liga; luego pulsa Buscar para cargar la tabla."
+        />
+      </PageHeader>
+
+      <div className="mb-5 grid grid-cols-1 gap-3.5 md:grid-cols-[1fr_1fr_1fr_auto]">
+        <Field label="País">
+          {countriesQuery.isLoading ? (
+            <LoadingBlock compact label="Cargando países…" />
+          ) : (
+            <FilteredSelect
+              value={country?.id ?? ""}
+              options={countryOptions}
+              placeholder="Selecciona un país"
+              searchPlaceholder="Buscar por nombre o código…"
+              emptyLabel="Ningún país coincide con la búsqueda."
+              onChange={setCountryId}
+            />
+          )}
+        </Field>
+        <Field label="Organización">
+          <FilteredSelect
+            value={selectedOrgId}
+            options={[
+              { value: "", label: "Todas las organizaciones" },
+              ...orgOptions,
+            ]}
+            placeholder="Todas las organizaciones"
+            searchPlaceholder="Buscar organización…"
+            emptyLabel="Sin organizaciones en este país."
+            disabled={!filtersEnabled || orgsQuery.isLoading}
+            onChange={setOrgId}
+          />
+        </Field>
+        <Field label="Liga">
+          <FilteredSelect
+            value={selectedLeagueId}
+            options={[
+              { value: "", label: "Todas las ligas" },
+              ...leagueOptions,
+            ]}
+            placeholder="Todas las ligas"
+            searchPlaceholder="Buscar liga…"
+            emptyLabel="Sin ligas para este filtro."
+            disabled={!filtersEnabled || leaguesQuery.isLoading}
+            onChange={setLeagueId}
+          />
+        </Field>
+        <div className="flex items-end">
+          <Button
+            className="w-full md:w-auto"
+            disabled={!draftSearch || (!draftDirty && hasApplied)}
+            onClick={runSearch}
+          >
+            Buscar
+          </Button>
+        </div>
+      </div>
+
+      {!hasApplied ? (
+        <div className="rounded-2xl border border-dashed border-dx-line bg-dx-card px-6 py-12 text-center shadow-[0_4px_14px_rgba(19,53,105,0.06)]">
+          <p className="text-[16px] font-semibold text-dx-ink">
+            {country ? "Listo para buscar" : "Selecciona un país"}
+          </p>
+          <p className="mt-2 text-[14px] text-dx-muted">
+            {country
+              ? "Ajusta organización o liga si lo necesitas y pulsa Buscar para cargar los equipos."
+              : "Elige un país (y opcionalmente organización o liga) y pulsa Buscar."}
+          </p>
+        </div>
+      ) : teamsQuery.isLoading ? (
+        <LoadingBlock compact label="Cargando equipos…" />
+      ) : teamsQuery.isError ? (
+        <div className="rounded-xl border border-[#f1dfa9] bg-[#fff9e8] px-3.5 py-3 text-[13px] text-[#7d5a00]">
+          {(teamsQuery.error as Error).message}
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-dx-line bg-dx-card px-6 py-12 text-center shadow-[0_4px_14px_rgba(19,53,105,0.06)]">
+          <p className="text-[16px] font-semibold text-dx-ink">
+            No hay equipos con este filtro
+          </p>
+          <p className="mt-2 text-[14px] text-dx-muted">
+            Prueba otra organización o liga y vuelve a buscar, o crea equipos
+            asociados a las ligas de {appliedSearch?.countryName}.
+          </p>
+        </div>
+      ) : (
+        <EditableDataTable
+          columns={columns}
+          rows={rows}
+          getValues={getValues}
+          saving={saveMutation.isPending}
+          onSave={(changes) => saveMutation.mutateAsync(changes)}
+          emptyLabel="No hay equipos."
+          filterPlaceholder="Filtrar equipos…"
+        />
+      )}
+
+      <Note className="mt-5">
+        {hasApplied
+          ? `${rows.length} equipo${rows.length === 1 ? "" : "s"} con el filtro aplicado. Si cambias país, organización o liga, pulsa Buscar de nuevo.`
+          : "La tabla no carga sola: define los criterios y pulsa Buscar."}
+      </Note>
+    </>
+  );
+}

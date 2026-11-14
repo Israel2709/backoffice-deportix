@@ -23,13 +23,13 @@ export default function FutbolMaestrosPage() {
         <ClickCard
           href="/datos-maestros/futbol/organizaciones"
           title="Organizaciones deportivas"
-          description="Federaciones y organizadores: nombre, país y logos."
+          description="País → organización."
           cta="Administrar →"
         />
         <ClickCard
           href="/datos-maestros/futbol/ligas"
           title="Ligas / torneos"
-          description="Por país: edita nombre, tipo, organización y logo de cada competición."
+          description="País → organización → liga."
           cta="Administrar →"
         />
         <ClickCard

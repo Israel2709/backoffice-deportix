@@ -8,6 +8,7 @@ import {
   listParticipants,
   listRounds,
   listSeasonMatches,
+  listSeasonTeams,
   listTeamsByIds,
   saveMatchesBatch,
 } from "@/lib/api/admin-soccer";
@@ -91,15 +92,35 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
     [participantsQuery.data],
   );
 
-  const teamsQuery = useQuery({
-    queryKey: ["admin", "soccer", "teams-by-ids", seasonId, participantIds],
-    queryFn: () => listTeamsByIds(participantIds),
-    enabled: participantIds.length > 0,
+  // One `GET /teams?league=&season=` instead of N× /v1/teams/{id}.
+  const seasonTeamsQuery = useQuery({
+    queryKey: ["admin", "soccer", "teams", "season", seasonId],
+    queryFn: () => listSeasonTeams(seasonId),
+  });
+
+  const missingTeamIds = useMemo(() => {
+    const known = new Set<string>();
+    for (const team of seasonTeamsQuery.data?.data ?? []) {
+      known.add(team.id);
+      const external = String(team.team.id ?? "").trim();
+      if (external) known.add(external);
+    }
+    return participantIds.filter((id) => id && !known.has(id));
+  }, [seasonTeamsQuery.data, participantIds]);
+
+  const orphanTeamsQuery = useQuery({
+    queryKey: ["admin", "soccer", "teams-by-ids", seasonId, missingTeamIds],
+    queryFn: () => listTeamsByIds(missingTeamIds),
+    enabled: missingTeamIds.length > 0,
   });
 
   const { byId: teamsById, byExternal } = useMemo(
-    () => buildTeamLookups(teamsQuery.data?.data ?? []),
-    [teamsQuery.data],
+    () =>
+      buildTeamLookups([
+        ...(seasonTeamsQuery.data?.data ?? []),
+        ...(orphanTeamsQuery.data?.data ?? []),
+      ]),
+    [seasonTeamsQuery.data, orphanTeamsQuery.data],
   );
 
   const participantTeams = useMemo(() => {
@@ -150,10 +171,19 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
   }, [rows, roundFilter]);
 
   const saveMutation = useMutation({
-    mutationFn: () =>
-      saveMatchesBatch(
+    mutationFn: () => {
+      const baselineRows = JSON.parse(baseline) as MatchRow[];
+      const baselineByKey = new Map(baselineRows.map((row) => [row.key, row]));
+      const toPersist = rows.filter((row) => {
+        if (!row.id) return true;
+        const original = baselineByKey.get(row.key);
+        if (!original) return true;
+        return JSON.stringify(row) !== JSON.stringify(original);
+      });
+
+      return saveMatchesBatch(
         seasonId,
-        rows.map((row) => ({
+        toPersist.map((row) => ({
           id: row.id,
           home_team_id: row.home_team_id,
           away_team_id: row.away_team_id,
@@ -166,7 +196,8 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
           round_id: row.round_id || null,
           round_name: row.round_name || null,
         })),
-      ),
+      );
+    },
     onSuccess: () => {
       toast.success("Partidos guardados");
       setBaseline(JSON.stringify(rows));

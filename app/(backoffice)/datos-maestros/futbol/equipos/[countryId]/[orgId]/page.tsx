@@ -21,15 +21,14 @@ export default function FutbolEquiposOrgPage({
     <>
       <PageHeader
         items={[
-              { label: "Datos Maestros", href: "/datos-maestros" },
-              { label: "Fútbol", href: "/datos-maestros/futbol" },
-              { label: "Equipos", href: equiposHref() },
-              {
-                label: countryName,
-                href: equiposHref(country?.id ?? countryId),
-              },
-              { label: orgName },
-            ]}
+          { label: "Datos Maestros", href: "/datos-maestros" },
+          { label: "Fútbol", href: "/datos-maestros/futbol" },
+          {
+            label: countryName,
+            href: equiposHref(country?.id ?? countryId),
+          },
+          { label: orgName },
+        ]}
       >
         <Hero
           eyebrow={`Fútbol · ${countryName}`}

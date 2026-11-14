@@ -19,6 +19,7 @@ import {
 } from "@/lib/api/admin-soccer";
 import {
   equiposHref,
+  equiposNuevoHref,
   findOrganization,
   leagueNamesMeta,
   leaguesForCountry,
@@ -110,11 +111,12 @@ export function EquiposCountryPanel() {
         error={error}
       />
       <Note>
-        Elige un país, después su organización deportiva y una liga. Los equipos
-        se muestran solo para esa liga.{" "}
-        <Link href="/datos-maestros/futbol/estructura" className="underline">
-          Ir a estructura
+        Elige un país, después su organización deportiva y una liga. Para alta
+        rápida usa{" "}
+        <Link href={equiposNuevoHref()} className="underline">
+          + Nuevo equipo
         </Link>
+        .
       </Note>
     </>
   );
@@ -162,11 +164,10 @@ export function EquiposOrganizationScreen({ countryId }: { countryId: string }) 
     <>
       <PageHeader
         items={[
-              { label: "Datos Maestros", href: "/datos-maestros" },
-              { label: "Fútbol", href: "/datos-maestros/futbol" },
-              { label: "Equipos", href: equiposHref() },
-              { label: countryName },
-            ]}
+          { label: "Datos Maestros", href: "/datos-maestros" },
+          { label: "Fútbol", href: "/datos-maestros/futbol" },
+          { label: countryName },
+        ]}
       >
         <Hero
           eyebrow={`Fútbol · ${countryName}`}

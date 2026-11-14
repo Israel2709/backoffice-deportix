@@ -192,6 +192,32 @@ export function equiposHref(countryId?: string, orgId?: string, leagueId?: strin
   return parts.join("/");
 }
 
+/** Dedicated create-team screen with optional context defaults via query. */
+export function equiposNuevoHref(opts?: {
+  countryId?: string | null;
+  orgId?: string | null;
+  leagueIds?: string[] | string | null;
+}) {
+  const params = new URLSearchParams();
+  const countryId = opts?.countryId?.trim();
+  const orgId = opts?.orgId?.trim();
+  const leagueIds = Array.isArray(opts?.leagueIds)
+    ? opts.leagueIds
+    : opts?.leagueIds
+      ? [opts.leagueIds]
+      : [];
+  if (countryId) params.set("pais", countryId);
+  if (orgId) params.set("org", orgId);
+  const ligas = [
+    ...new Set(leagueIds.map((id) => id.trim()).filter(Boolean)),
+  ];
+  if (ligas.length) params.set("liga", ligas.join(","));
+  const query = params.toString();
+  return query
+    ? `/datos-maestros/futbol/equipos/nuevo?${query}`
+    : "/datos-maestros/futbol/equipos/nuevo";
+}
+
 /** Org card used in Operación org-first navigation. */
 export type SoccerNavOrganization = {
   id: string;

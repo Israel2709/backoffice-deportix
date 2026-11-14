@@ -129,19 +129,19 @@ La respuesta puede incluir `league` y `organization` en cada ítem. Datos maestr
 
 Lee un equipo por id de Firestore o id externo.
 
-#### `POST /teams?league={leagueId}`
+#### `POST /teams` · `POST /teams?league={leagueId}`
 
-Crea un equipo en esa liga.
+Crea un equipo. `league` es opcional (catálogo sin liga). Si el BO elige varias ligas, llama una vez por liga con los mismos datos maestros.
 
 Recibe `{ name, code, country, logo }`.
 
 #### `PATCH /teams?id={id}`
 
-Actualiza nombre, código, país o logo. Solo manda los campos que cambiaron.
+Actualiza nombre, código, país, logo o `league` (reasignar la liga del catálogo). Solo manda los campos que cambiaron.
 
 #### `DELETE /teams?id={id}`
 
-Elimina un equipo.
+Elimina un equipo del catálogo (quitarlo de su liga en Datos maestros).
 
 ### Football americano
 

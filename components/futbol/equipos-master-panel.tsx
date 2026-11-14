@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -13,6 +14,7 @@ import { Note } from "@/components/ui/note";
 import { PageHeader } from "@/components/ui/page";
 import { LoadingBlock } from "@/components/ui/spinner";
 import {
+  deleteTeam,
   listAdminCountries,
   listAdminOrganizations,
   listLeaguesForCountry,
@@ -21,6 +23,7 @@ import {
   type SoccerTeamWithLeague,
 } from "@/lib/api/admin-soccer";
 import {
+  equiposNuevoHref,
   findCountry,
   leagueBelongsToCountry,
 } from "@/lib/api/soccer-structure";
@@ -43,6 +46,14 @@ function searchKey(search: TeamsSearch): string {
   ].join("|");
 }
 
+function normalizeTeamName(value: string | null | undefined): string {
+  return (value ?? "").trim().toLocaleLowerCase("es");
+}
+
+function sameLeagueId(a: string | null | undefined, b: string | null | undefined) {
+  return (a ?? "").trim() === (b ?? "").trim() && Boolean((a ?? "").trim());
+}
+
 export function EquiposMasterPanel() {
   const router = useRouter();
   const pathname = usePathname();
@@ -54,6 +65,7 @@ export function EquiposMasterPanel() {
   const selectedLeagueId = searchParams.get(LEAGUE_PARAM)?.trim() ?? "";
 
   const [appliedSearch, setAppliedSearch] = useState<TeamsSearch | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const countriesQuery = useQuery({
     queryKey: ["admin", "soccer", "countries"],
@@ -174,6 +186,25 @@ export function EquiposMasterPanel() {
       }));
   }, [countryLeagues, selectedOrgId]);
 
+  const countryLeagueEditOptions = useMemo(
+    () =>
+      [...countryLeagues]
+        .sort((a, b) => a.name.localeCompare(b.name, "es"))
+        .map((league) => ({
+          value: league.id,
+          label: league.name,
+        })),
+    [countryLeagues],
+  );
+
+  const leagueNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const league of countryLeagues) {
+      map.set(league.id, league.name);
+    }
+    return map;
+  }, [countryLeagues]);
+
   const draftSearch = useMemo<TeamsSearch | null>(() => {
     if (!countryName) return null;
     return {
@@ -214,8 +245,51 @@ export function EquiposMasterPanel() {
 
   const rows = teamsQuery.data?.data ?? [];
 
+  const createHref = useMemo(
+    () =>
+      equiposNuevoHref({
+        countryId: country?.id,
+        orgId: selectedOrgId || null,
+        leagueIds: selectedLeagueId ? [selectedLeagueId] : [],
+      }),
+    [country?.id, selectedOrgId, selectedLeagueId],
+  );
+
+  const orgLabel = useMemo(() => {
+    if (!selectedOrgId) return null;
+    return orgOptions.find((opt) => opt.value === selectedOrgId)?.label ?? null;
+  }, [orgOptions, selectedOrgId]);
+
+  const leagueLabel = useMemo(() => {
+    if (!selectedLeagueId) return null;
+    return (
+      leagueOptions.find((opt) => opt.value === selectedLeagueId)?.label ?? null
+    );
+  }, [leagueOptions, selectedLeagueId]);
+
   const columns = useMemo(
     () => [
+      {
+        id: "crest",
+        header: "",
+        editable: false,
+        filterable: false,
+        sortable: false,
+        className: "w-[72px]",
+        format: (value: string) =>
+          value ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={value}
+              alt=""
+              className="mx-auto h-8 w-8 object-contain"
+            />
+          ) : (
+            <span className="block text-center text-[12px] text-dx-muted">
+              —
+            </span>
+          ),
+      },
       {
         id: "name",
         header: "Nombre",
@@ -229,29 +303,69 @@ export function EquiposMasterPanel() {
         className: "w-[120px]",
       },
       {
-        id: "league_name",
+        id: "league_id",
         header: "Liga",
-        editable: false,
-        placeholder: "—",
+        editAs: "select" as const,
+        placeholder: "Liga…",
+        options: countryLeagueEditOptions,
+        format: (value: string) =>
+          value ? (leagueNameById.get(value) ?? value) : "—",
       },
       {
         id: "logo",
         header: "Logo (URL)",
+        filterable: false,
         placeholder: "https://…",
       },
     ],
-    [],
+    [countryLeagueEditOptions, leagueNameById],
   );
 
   const getValues = useCallback(
     (row: SoccerTeamWithLeague) => ({
+      crest: row.team.logo ?? "",
       name: row.team.name ?? "",
       code: row.team.code ?? "",
-      league_name: row.league_name ?? "",
+      league_id: row.league_id ?? "",
       logo: row.team.logo ?? "",
     }),
     [],
   );
+
+  function assertTeamCanMoveToLeague(
+    current: SoccerTeamWithLeague,
+    targetLeagueId: string,
+    allRows: SoccerTeamWithLeague[],
+  ) {
+    const targetName =
+      leagueNameById.get(targetLeagueId) ?? targetLeagueId;
+
+    if (sameLeagueId(current.league_id, targetLeagueId)) {
+      throw new Error(
+        `El equipo ya se encuentra en la liga «${targetName}».`,
+      );
+    }
+
+    const currentName = normalizeTeamName(current.team.name);
+    const currentExternal = String(current.team.id ?? "").trim();
+    const clash = allRows.find((row) => {
+      if (row.id === current.id) return false;
+      if (!sameLeagueId(row.league_id, targetLeagueId)) return false;
+      if (currentName && normalizeTeamName(row.team.name) === currentName) {
+        return true;
+      }
+      const otherExternal = String(row.team.id ?? "").trim();
+      return Boolean(
+        currentExternal && otherExternal && currentExternal === otherExternal,
+      );
+    });
+
+    if (clash) {
+      throw new Error(
+        `El equipo ya se encuentra en la liga «${targetName}».`,
+      );
+    }
+  }
 
   const saveMutation = useMutation({
     mutationFn: async (
@@ -261,16 +375,34 @@ export function EquiposMasterPanel() {
         const name = change.values.name?.trim() ?? "";
         if (!name) throw new Error("El nombre del equipo es obligatorio.");
         const current = rows.find((row) => row.id === change.id);
+        if (!current) throw new Error("Equipo no encontrado en la tabla.");
+
+        const nextLeagueId = change.values.league_id?.trim() || "";
+        if (!nextLeagueId) {
+          throw new Error("La liga es obligatoria.");
+        }
+
+        if (!sameLeagueId(current.league_id, nextLeagueId)) {
+          assertTeamCanMoveToLeague(current, nextLeagueId, rows);
+
+          // Confirm against the target league on the API (covers rows outside the current filter).
+          const targetRoster = await listSoccerTeams({ leagueId: nextLeagueId });
+          assertTeamCanMoveToLeague(current, nextLeagueId, [
+            ...rows,
+            ...targetRoster.data,
+          ]);
+        }
+
         await updateTeam(change.id, {
           name,
           abbreviation: change.values.code?.trim() || "",
           name_short: change.values.code?.trim() || "",
           logo: change.values.logo?.trim() || null,
           country_name:
-            current?.team.country?.trim() ||
+            current.team.country?.trim() ||
             appliedSearch?.countryName ||
             countryName,
-          league_id: current?.league_id,
+          league_id: nextLeagueId,
         });
       }
     },
@@ -287,10 +419,27 @@ export function EquiposMasterPanel() {
     onError: (error: Error) => toast.error(error.message),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      setDeletingId(id);
+      await deleteTeam(id);
+    },
+    onSuccess: () => {
+      toast.success("Equipo eliminado de la liga");
+      void queryClient.invalidateQueries({
+        queryKey: ["admin", "soccer", "teams"],
+      });
+    },
+    onError: (error: Error) => toast.error(error.message),
+    onSettled: () => setDeletingId(null),
+  });
+
   const crumbItems = [
     { label: "Datos Maestros", href: "/datos-maestros" },
     { label: "Fútbol", href: "/datos-maestros/futbol" },
     ...(country ? [{ label: country.name }] : []),
+    ...(orgLabel ? [{ label: orgLabel }] : []),
+    ...(leagueLabel ? [{ label: leagueLabel }] : []),
     { label: "Equipos" },
   ];
 
@@ -304,6 +453,14 @@ export function EquiposMasterPanel() {
           eyebrow="Datos Maestros · Fútbol"
           title="Equipos"
           description="Elige país y, si quieres, organización o liga; luego pulsa Buscar para cargar la tabla."
+          actions={
+            <Link
+              href={createHref}
+              className="inline-flex items-center gap-2 rounded-[10px] bg-dx-blue px-[15px] py-[11px] text-sm font-bold text-white hover:bg-dx-blue2"
+            >
+              + Nuevo equipo
+            </Link>
+          }
         />
       </PageHeader>
 
@@ -394,7 +551,24 @@ export function EquiposMasterPanel() {
           rows={rows}
           getValues={getValues}
           saving={saveMutation.isPending}
+          deletingId={deletingId}
           onSave={(changes) => saveMutation.mutateAsync(changes)}
+          onDelete={(id) => {
+            const row = rows.find((item) => item.id === id);
+            const label = row?.team.name?.trim() || "este equipo";
+            const leagueLabel =
+              (row?.league_id && leagueNameById.get(row.league_id)) ||
+              row?.league_name ||
+              "la liga";
+            if (
+              !confirm(
+                `¿Eliminar «${label}» de ${leagueLabel}? Se quitará del catálogo de esa liga.`,
+              )
+            ) {
+              return;
+            }
+            deleteMutation.mutate(id);
+          }}
           emptyLabel="No hay equipos."
           filterPlaceholder="Filtrar equipos…"
         />
@@ -402,7 +576,7 @@ export function EquiposMasterPanel() {
 
       <Note className="mt-5">
         {hasApplied
-          ? `${rows.length} equipo${rows.length === 1 ? "" : "s"} con el filtro aplicado. Si cambias país, organización o liga, pulsa Buscar de nuevo.`
+          ? `${rows.length} equipo${rows.length === 1 ? "" : "s"} con el filtro aplicado. Puedes cambiar la liga a cualquier competición del país; si el equipo ya está ahí, verás un aviso.`
           : "La tabla no carga sola: define los criterios y pulsa Buscar."}
       </Note>
     </>

@@ -1,12 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { LoadingBlock } from "@/components/ui/spinner";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
-  createTeam,
   deleteTeam,
   listAdminCountries,
   listAdminTeams,
@@ -17,9 +17,11 @@ import {
   teamDisplayName,
   type SoccerTeam,
 } from "@/lib/api/soccer-types";
+import { equiposNuevoHref } from "@/lib/api/soccer-structure";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Field, TextInput, TextSelect } from "@/components/capture/field";
+import { LogoUrlOrFileField } from "@/components/capture/logo-url-or-file-field";
 import { Note } from "@/components/ui/note";
 
 type TeamForm = {
@@ -64,15 +66,16 @@ export function TeamsMasterPanel({
   leagueId,
   countryId,
   countryName,
+  organizationId,
 }: {
   leagueId: string;
   countryId?: string;
   countryName?: string;
+  organizationId?: string;
 }) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<TeamForm>(emptyForm());
 
   const teamsQuery = useQuery({
@@ -103,9 +106,16 @@ export function TeamsMasterPanel({
     });
   }, [teamsQuery.data, search]);
 
+  const createHref = equiposNuevoHref({
+    countryId,
+    orgId: organizationId,
+    leagueIds: leagueId ? [leagueId] : [],
+  });
+
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const payload = {
+      if (!editingId) throw new Error("No hay equipo en edición.");
+      return updateTeam(editingId, {
         name: form.name.trim(),
         name_short: form.name_short.trim(),
         abbreviation: form.abbreviation.trim(),
@@ -115,15 +125,10 @@ export function TeamsMasterPanel({
         league_id: leagueId,
         logo: form.logo.trim() || null,
         status: form.status,
-      };
-      if (editingId) {
-        return updateTeam(editingId, payload);
-      }
-      return createTeam(payload);
+      });
     },
     onSuccess: () => {
-      toast.success(editingId ? "Equipo actualizado" : "Equipo creado");
-      setCreating(false);
+      toast.success("Equipo actualizado");
       setEditingId(null);
       setForm(emptyForm());
       void queryClient.invalidateQueries({
@@ -148,19 +153,7 @@ export function TeamsMasterPanel({
     onError: (error: Error) => toast.error(error.message),
   });
 
-  function openCreate() {
-    setCreating(true);
-    setEditingId(null);
-    setForm({
-      ...emptyForm(),
-      league_id: leagueId,
-      country_id: countryId ?? "",
-      country_name: countryName ?? "",
-    });
-  }
-
   function openEdit(team: SoccerTeam) {
-    setCreating(true);
     setEditingId(team.id);
     setForm(toForm(team));
   }
@@ -181,7 +174,12 @@ export function TeamsMasterPanel({
             onChange={(e) => setSearch(e.target.value)}
             className="min-w-[220px]"
           />
-          <Button onClick={openCreate}>+ Nuevo equipo</Button>
+          <Link
+            href={createHref}
+            className="inline-flex items-center gap-2 rounded-[10px] bg-dx-blue px-[15px] py-[11px] text-sm font-bold text-white hover:bg-dx-blue2"
+          >
+            + Nuevo equipo
+          </Link>
         </div>
       </div>
 
@@ -251,11 +249,9 @@ export function TeamsMasterPanel({
         </div>
       )}
 
-      {creating ? (
+      {editingId ? (
         <div className="rounded-2xl border border-dx-line bg-dx-card p-5">
-          <h3 className="text-lg font-semibold">
-            {editingId ? "Editar equipo" : "Nuevo equipo"}
-          </h3>
+          <h3 className="text-lg font-semibold">Editar equipo</h3>
           <div className="mt-3.5 grid grid-cols-1 gap-3.5 md:grid-cols-2">
             <Field label="Nombre oficial">
               <TextInput
@@ -291,13 +287,13 @@ export function TeamsMasterPanel({
               <TextSelect
                 value={form.country_id}
                 onChange={(e) => {
-                  const country = countriesQuery.data?.data.find(
+                  const selected = countriesQuery.data?.data.find(
                     (c) => c.id === e.target.value,
                   );
                   setForm({
                     ...form,
                     country_id: e.target.value,
-                    country_name: country?.name ?? "",
+                    country_name: selected?.name ?? "",
                   });
                 }}
               >
@@ -323,19 +319,17 @@ export function TeamsMasterPanel({
                 <option value="inactive">Inactivo</option>
               </TextSelect>
             </Field>
-            <Field label="Logo (URL)">
-              <TextInput
-                value={form.logo}
-                onChange={(e) => setForm({ ...form, logo: e.target.value })}
-                placeholder="https://…"
-              />
-            </Field>
+            <LogoUrlOrFileField
+              label="Logo"
+              value={form.logo}
+              folder="logos/soccer/teams"
+              onChange={(url) => setForm({ ...form, logo: url })}
+            />
           </div>
           <div className="mt-4 flex gap-2">
             <Button
               variant="secondary"
               onClick={() => {
-                setCreating(false);
                 setEditingId(null);
                 setForm(emptyForm());
               }}
@@ -359,8 +353,9 @@ export function TeamsMasterPanel({
       ) : null}
 
       <Note>
-        Equipos de esta liga. El alta queda asociada a la liga seleccionada;
-        luego se reutilizan en Operación Deportiva.
+        Equipos de esta liga. El alta se hace en una pantalla dedicada
+        {countryName ? ` (contexto: ${countryName})` : ""}; aquí puedes editar
+        o eliminar.
       </Note>
     </div>
   );

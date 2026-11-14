@@ -944,7 +944,8 @@ export async function createTeam(body: {
   name: string;
   name_short: string;
   abbreviation: string;
-  league_id: string;
+  /** Optional catalog league; omit to create without league assignment. */
+  league_id?: string | null;
   name_alt?: string | null;
   country_id?: string | null;
   country_name?: string | null;
@@ -952,21 +953,57 @@ export async function createTeam(body: {
   logo_alt?: string | null;
   status?: "active" | "inactive";
 }): One<SoccerTeam> {
-  const response = await bffRequest<BffTeamEntry[] | BffTeamEntry>(
-    `teams?league=${encodeURIComponent(body.league_id)}`,
-    {
-      method: "POST",
-      body: JSON.stringify({
-        name: body.name,
-        code: body.abbreviation || body.name_short || null,
-        country: body.country_name || body.country_id || null,
-        logo: body.logo ?? null,
-      }),
-    },
-  );
+  const leagueId = body.league_id?.trim() || "";
+  const qs = leagueId
+    ? `teams?league=${encodeURIComponent(leagueId)}`
+    : "teams";
+  const response = await bffRequest<BffTeamEntry[] | BffTeamEntry>(qs, {
+    method: "POST",
+    body: JSON.stringify({
+      name: body.name,
+      code: body.abbreviation || body.name_short || null,
+      country: body.country_name || body.country_id || null,
+      logo: body.logo ?? null,
+    }),
+  });
   const created = firstOf(response);
   if (!created) throw new Error("Team create returned empty response");
-  return { data: mapTeam(created, body.league_id) };
+  return { data: mapTeam(created, leagueId) };
+}
+
+/**
+ * Create one catalog team; if several leagues are provided, creates one row per
+ * league with the same master data (name/logo/country) so it appears in each.
+ */
+export async function createTeamForLeagues(
+  body: {
+    name: string;
+    name_short: string;
+    abbreviation: string;
+    league_ids?: string[];
+    name_alt?: string | null;
+    country_id?: string | null;
+    country_name?: string | null;
+    logo?: string | null;
+    logo_alt?: string | null;
+    status?: "active" | "inactive";
+  },
+): List<SoccerTeam> {
+  const leagueIds = [
+    ...new Set(
+      (body.league_ids ?? []).map((id) => id.trim()).filter(Boolean),
+    ),
+  ];
+  if (leagueIds.length === 0) {
+    const created = await createTeam({ ...body, league_id: null });
+    return { data: [created.data] };
+  }
+  const data: SoccerTeam[] = [];
+  for (const leagueId of leagueIds) {
+    const created = await createTeam({ ...body, league_id: leagueId });
+    data.push(created.data);
+  }
+  return { data };
 }
 
 export async function updateTeam(
@@ -993,6 +1030,9 @@ export async function updateTeam(
     patch.country = body.country_name || body.country_id || null;
   }
   if (body.logo !== undefined) patch.logo = body.logo;
+  if (body.league_id !== undefined) {
+    patch.league = body.league_id?.trim() || null;
+  }
 
   const response = await bffRequest<BffTeamEntry[] | BffTeamEntry>(
     `teams?id=${encodeURIComponent(id)}`,

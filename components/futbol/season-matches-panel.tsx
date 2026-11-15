@@ -181,21 +181,35 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
         return JSON.stringify(row) !== JSON.stringify(original);
       });
 
+      for (const row of toPersist) {
+        if (!row.home_team_id?.trim() || !row.away_team_id?.trim()) {
+          throw new Error(
+            "Hay partidos sin local o visitante. Elige ambos equipos antes de guardar.",
+          );
+        }
+      }
+
       return saveMatchesBatch(
         seasonId,
-        toPersist.map((row) => ({
-          id: row.id,
-          home_team_id: row.home_team_id,
-          away_team_id: row.away_team_id,
-          fixture_date: combineUtcDateTime(row.date, row.time),
-          status: row.status,
-          goals_home:
-            row.goals_home === "" ? null : Number(row.goals_home),
-          goals_away:
-            row.goals_away === "" ? null : Number(row.goals_away),
-          round_id: row.round_id || null,
-          round_name: row.round_name || null,
-        })),
+        toPersist.map((row) => {
+          const home = teamsById.get(row.home_team_id);
+          const away = teamsById.get(row.away_team_id);
+          return {
+            id: row.id,
+            home_team_id: row.home_team_id,
+            away_team_id: row.away_team_id,
+            home_name: home ? teamDisplayName(home) : row.home_label || null,
+            away_name: away ? teamDisplayName(away) : row.away_label || null,
+            fixture_date: combineUtcDateTime(row.date, row.time),
+            status: row.status,
+            goals_home:
+              row.goals_home === "" ? null : Number(row.goals_home),
+            goals_away:
+              row.goals_away === "" ? null : Number(row.goals_away),
+            round_id: row.round_id || null,
+            round_name: row.round_name || null,
+          };
+        }),
       );
     },
     onSuccess: () => {
@@ -342,6 +356,9 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
                         updateRow(row.key, { home_team_id: e.target.value })
                       }
                     >
+                      {!row.home_team_id ? (
+                        <option value="">Selecciona local…</option>
+                      ) : null}
                       {!teamsById.has(row.home_team_id) && row.home_team_id ? (
                         <option value={row.home_team_id}>
                           {home ? teamDisplayName(home) : row.home_label}
@@ -385,6 +402,9 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
                         updateRow(row.key, { away_team_id: e.target.value })
                       }
                     >
+                      {!row.away_team_id ? (
+                        <option value="">Selecciona visitante…</option>
+                      ) : null}
                       {!teamsById.has(row.away_team_id) && row.away_team_id ? (
                         <option value={row.away_team_id}>
                           {away ? teamDisplayName(away) : row.away_label}

@@ -1315,6 +1315,8 @@ export async function saveMatchesBatch(
     id?: string;
     home_team_id: string;
     away_team_id: string;
+    home_name?: string | null;
+    away_name?: string | null;
     fixture_date?: string | null;
     status: MatchBoStatus;
     goals_home?: number | null;
@@ -1324,8 +1326,22 @@ export async function saveMatchesBatch(
   }>,
 ): List<SoccerMatch> {
   const { leagueId, year } = parseSeasonId(seasonId);
+  if (!leagueId.trim()) {
+    throw new Error("No se pudo resolver la liga de la temporada.");
+  }
 
   for (const match of matches) {
+    const homeId = match.home_team_id?.trim() ?? "";
+    const awayId = match.away_team_id?.trim() ?? "";
+    if (!homeId || !awayId) {
+      throw new Error(
+        "Cada partido necesita local y visitante. Elige ambos equipos antes de guardar.",
+      );
+    }
+    if (homeId === awayId) {
+      throw new Error("Local y visitante deben ser equipos distintos.");
+    }
+
     const body = {
       fixture: {
         date: match.fixture_date || new Date().toISOString(),
@@ -1340,8 +1356,14 @@ export async function saveMatchesBatch(
         round: match.round_name || match.round_id || null,
       },
       teams: {
-        home: { id: match.home_team_id },
-        away: { id: match.away_team_id },
+        home: {
+          id: homeId,
+          ...(match.home_name ? { name: match.home_name } : {}),
+        },
+        away: {
+          id: awayId,
+          ...(match.away_name ? { name: match.away_name } : {}),
+        },
       },
       goals: {
         home: match.goals_home ?? null,
@@ -1349,8 +1371,9 @@ export async function saveMatchesBatch(
       },
     };
 
-    if (match.id) {
-      await bffRequest(`fixtures/${encodeURIComponent(match.id)}`, {
+    const matchId = match.id?.trim() ?? "";
+    if (matchId) {
+      await bffRequest(`fixtures/${encodeURIComponent(matchId)}`, {
         method: "PATCH",
         body: JSON.stringify(body),
       });

@@ -297,6 +297,7 @@ export function SeasonRankingsPanel({ seasonId }: { seasonId: string }) {
       changes: Array<{ id: string; values: Record<string, string> }>,
     ) => {
       const changeMap = new Map(changes.map((c) => [c.id, c.values]));
+      const originalById = new Map(driverRows.map((row) => [row.id, row]));
       const merged = driverRows.map((row) => {
         const values = changeMap.get(row.id);
         return {
@@ -311,9 +312,20 @@ export function SeasonRankingsPanel({ seasonId }: { seasonId: string }) {
         };
       });
       const positioned = withCalculatedPositions(merged);
+      const toPersist = positioned.filter((row) => {
+        if (isDraftId(row.id)) return true;
+        const original = originalById.get(row.id);
+        if (!original) return true;
+        return (
+          original.position !== row.position ||
+          original.points !== row.points ||
+          original.wins !== row.wins ||
+          original.podiums !== row.podiums
+        );
+      });
       await replaceDriverRankings(
         seasonId,
-        positioned.map((row) => ({
+        toPersist.map((row) => ({
           id: isDraftId(row.id) ? undefined : row.id,
           driver_id: row.driver_id,
           position: row.position,
@@ -335,6 +347,7 @@ export function SeasonRankingsPanel({ seasonId }: { seasonId: string }) {
       changes: Array<{ id: string; values: Record<string, string> }>,
     ) => {
       const changeMap = new Map(changes.map((c) => [c.id, c.values]));
+      const originalById = new Map(teamRows.map((row) => [row.id, row]));
       const merged = teamRows.map((row) => {
         const values = changeMap.get(row.id);
         return {
@@ -349,9 +362,20 @@ export function SeasonRankingsPanel({ seasonId }: { seasonId: string }) {
         };
       });
       const positioned = withCalculatedPositions(merged);
+      const toPersist = positioned.filter((row) => {
+        if (isDraftId(row.id)) return true;
+        const original = originalById.get(row.id);
+        if (!original) return true;
+        return (
+          original.position !== row.position ||
+          original.points !== row.points ||
+          original.wins !== row.wins ||
+          original.podiums !== row.podiums
+        );
+      });
       await replaceTeamRankings(
         seasonId,
-        positioned.map((row) => ({
+        toPersist.map((row) => ({
           id: isDraftId(row.id) ? undefined : row.id,
           team_id: row.team_id,
           position: row.position,

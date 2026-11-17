@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Note } from "@/components/ui/note";
 import { StickyActions } from "@/components/capture/sticky-actions";
 import { TextSelect } from "@/components/capture/field";
+import { AddMatchesModal } from "@/components/futbol/add-matches-modal";
 import { cn } from "@/lib/utils";
 import { combineUtcDateTime, splitUtcDateTime } from "@/lib/format-date";
 
@@ -72,6 +73,7 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
   const [rows, setRows] = useState<MatchRow[]>([]);
   const [baseline, setBaseline] = useState("[]");
   const [roundFilter, setRoundFilter] = useState<string>("all");
+  const [addOpen, setAddOpen] = useState(false);
 
   const matchesQuery = useQuery({
     queryKey: ["admin", "soccer", "matches", seasonId],
@@ -228,31 +230,6 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
     );
   }
 
-  function addMatch() {
-    const firstRound = roundsQuery.data?.data[0];
-    const homeTeam = participantTeams[0];
-    const awayTeam = participantTeams[1];
-    const home = homeTeam?.id ?? "";
-    const away = awayTeam?.id ?? "";
-    setRows((prev) => [
-      ...prev,
-      {
-        key: `new-${Date.now()}`,
-        home_team_id: home,
-        away_team_id: away,
-        home_label: homeTeam ? teamDisplayName(homeTeam) : home,
-        away_label: awayTeam ? teamDisplayName(awayTeam) : away,
-        date: "",
-        time: "",
-        status: "scheduled" as MatchBoStatus,
-        goals_home: "",
-        goals_away: "",
-        round_id: firstRound?.id ?? "",
-        round_name: firstRound?.name ?? "",
-      },
-    ]);
-  }
-
   if (matchesQuery.isLoading || roundsQuery.isLoading) {
     return <LoadingBlock label="Cargando partidos…" />;
   }
@@ -284,7 +261,7 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
             ))}
           </TextSelect>
         </div>
-        <Button onClick={addMatch}>+ Agregar partido</Button>
+        <Button onClick={() => setAddOpen(true)}>Agregar partidos</Button>
       </div>
 
       <div className="flex items-center justify-between rounded-[10px] border border-[#d9e4f3] bg-[#eef4fb] px-3 py-2.5">
@@ -460,6 +437,16 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
         saveLabel="Guardar jornada"
         onDiscard={() => setRows(JSON.parse(baseline) as MatchRow[])}
         onSave={() => saveMutation.mutate()}
+      />
+
+      <AddMatchesModal
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        seasonId={seasonId}
+        rounds={roundsQuery.data?.data ?? []}
+        participantTeams={participantTeams}
+        teamsById={teamsById}
+        defaultRoundId={roundFilter === "all" ? "" : roundFilter}
       />
     </div>
   );

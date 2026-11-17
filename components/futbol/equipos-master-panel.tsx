@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { FilteredSelect } from "@/components/capture/filtered-select";
 import { Field } from "@/components/capture/field";
 import { EditableDataTable } from "@/components/data/editable-data-table";
+import { TeamLogoModal } from "@/components/futbol/team-logo-modal";
 import { Button } from "@/components/ui/button";
 import { Hero } from "@/components/ui/hero";
 import { Note } from "@/components/ui/note";
@@ -66,6 +67,7 @@ export function EquiposMasterPanel() {
 
   const [appliedSearch, setAppliedSearch] = useState<TeamsSearch | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [logoTeam, setLogoTeam] = useState<SoccerTeamWithLeague | null>(null);
 
   const countriesQuery = useQuery({
     queryKey: ["admin", "soccer", "countries"],
@@ -271,24 +273,36 @@ export function EquiposMasterPanel() {
     () => [
       {
         id: "crest",
-        header: "",
+        header: "Logo",
         editable: false,
         filterable: false,
         sortable: false,
-        className: "w-[72px]",
-        format: (value: string) =>
-          value ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={value}
-              alt=""
-              className="mx-auto h-8 w-8 object-contain"
-            />
-          ) : (
-            <span className="block text-center text-[12px] text-dx-muted">
-              —
-            </span>
-          ),
+        className: "w-[88px]",
+        format: (value: string, row: SoccerTeamWithLeague) => (
+          <button
+            type="button"
+            title="Cambiar logo"
+            aria-label={`Cambiar logo de ${row.team.name || "equipo"}`}
+            className="mx-auto flex h-10 w-10 items-center justify-center rounded-[8px] border border-transparent hover:border-dx-line hover:bg-[#f5f8ff] focus:border-dx-blue focus:outline-none"
+            onClick={(event) => {
+              event.stopPropagation();
+              setLogoTeam(row);
+            }}
+          >
+            {value ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={value}
+                alt=""
+                className="h-8 w-8 object-contain"
+              />
+            ) : (
+              <span className="text-[11px] font-semibold text-dx-muted">
+                +
+              </span>
+            )}
+          </button>
+        ),
       },
       {
         id: "name",
@@ -310,12 +324,6 @@ export function EquiposMasterPanel() {
         options: countryLeagueEditOptions,
         format: (value: string) =>
           value ? (leagueNameById.get(value) ?? value) : "—",
-      },
-      {
-        id: "logo",
-        header: "Logo (URL)",
-        filterable: false,
-        placeholder: "https://…",
       },
     ],
     [countryLeagueEditOptions, leagueNameById],
@@ -397,7 +405,10 @@ export function EquiposMasterPanel() {
           name,
           abbreviation: change.values.code?.trim() || "",
           name_short: change.values.code?.trim() || "",
-          logo: change.values.logo?.trim() || null,
+          logo:
+            change.values.logo?.trim() ||
+            current.team.logo?.trim() ||
+            null,
           country_name:
             current.team.country?.trim() ||
             appliedSearch?.countryName ||
@@ -576,9 +587,23 @@ export function EquiposMasterPanel() {
 
       <Note className="mt-5">
         {hasApplied
-          ? `${rows.length} equipo${rows.length === 1 ? "" : "s"} con el filtro aplicado. Puedes cambiar la liga a cualquier competición del país; si el equipo ya está ahí, verás un aviso.`
+          ? `${rows.length} equipo${rows.length === 1 ? "" : "s"} con el filtro aplicado. Puedes cambiar la liga a cualquier competición del país; si el equipo ya está ahí, verás un aviso. Pulsa el logo para subirlo o cambiarlo.`
           : "La tabla no carga sola: define los criterios y pulsa Buscar."}
       </Note>
+
+      <TeamLogoModal
+        open={Boolean(logoTeam)}
+        onClose={() => setLogoTeam(null)}
+        teamId={logoTeam?.id ?? ""}
+        teamName={logoTeam?.team.name?.trim() || "Equipo"}
+        currentLogo={logoTeam?.team.logo ?? null}
+        leagueId={logoTeam?.league_id ?? ""}
+        countryName={
+          logoTeam?.team.country?.trim() ||
+          appliedSearch?.countryName ||
+          countryName
+        }
+      />
     </>
   );
 }

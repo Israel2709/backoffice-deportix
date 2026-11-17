@@ -240,6 +240,7 @@ export function YearRankingsPanel({
       changes: Array<{ id: string; values: Record<string, string> }>,
     ) => {
       const changeMap = new Map(changes.map((c) => [c.id, c.values]));
+      const originalById = new Map(driverRows.map((row) => [row.id, row]));
       const merged = driverRows.map((row) => {
         const values = changeMap.get(row.id);
         return {
@@ -250,9 +251,19 @@ export function YearRankingsPanel({
         };
       });
       const positioned = withCalculatedPositions(merged);
+      const toPersist = positioned.filter((row) => {
+        const original = originalById.get(row.id);
+        if (!original) return true;
+        return (
+          original.position !== row.position ||
+          original.points !== row.points ||
+          original.wins !== row.wins ||
+          original.podiums !== row.podiums
+        );
+      });
       await replaceSeasonDriverRankings(
         year,
-        positioned.map((row) => ({
+        toPersist.map((row) => ({
           id: row.id,
           driver_id: row.driver_id,
           position: row.position,
@@ -276,6 +287,7 @@ export function YearRankingsPanel({
       changes: Array<{ id: string; values: Record<string, string> }>,
     ) => {
       const changeMap = new Map(changes.map((c) => [c.id, c.values]));
+      const originalById = new Map(teamRows.map((row) => [row.id, row]));
       const merged = teamRows.map((row) => {
         const values = changeMap.get(row.id);
         return {
@@ -286,9 +298,19 @@ export function YearRankingsPanel({
         };
       });
       const positioned = withCalculatedPositions(merged);
+      const toPersist = positioned.filter((row) => {
+        const original = originalById.get(row.id);
+        if (!original) return true;
+        return (
+          original.position !== row.position ||
+          original.points !== row.points ||
+          original.wins !== row.wins ||
+          original.podiums !== row.podiums
+        );
+      });
       await replaceSeasonTeamRankings(
         year,
-        positioned.map((row) => ({
+        toPersist.map((row) => ({
           id: row.id,
           team_id: row.team_id,
           position: row.position,

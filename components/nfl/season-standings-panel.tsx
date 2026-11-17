@@ -93,10 +93,20 @@ export function SeasonStandingsPanel({ seasonId }: { seasonId: string }) {
   useDirtyGuard(dirty);
 
   const saveMutation = useMutation({
-    mutationFn: () =>
-      replaceStandings(
+    mutationFn: () => {
+      const baselineRows = JSON.parse(baseline) as StandingRow[];
+      const baselineByTeam = new Map(
+        baselineRows.map((row) => [row.team_id, row]),
+      );
+      const toPersist = rows.filter((row) => {
+        const original = baselineByTeam.get(row.team_id);
+        if (!original) return true;
+        return JSON.stringify(row) !== JSON.stringify(original);
+      });
+
+      return replaceStandings(
         seasonId,
-        rows.map((row) => ({
+        toPersist.map((row) => ({
           team_id: row.team_id,
           rank: row.rank,
           played: row.played,
@@ -104,7 +114,8 @@ export function SeasonStandingsPanel({ seasonId }: { seasonId: string }) {
           lost: row.lost,
           ties: row.ties,
         })),
-      ),
+      );
+    },
     onSuccess: () => {
       toast.success("Clasificación guardada");
       setBaseline(JSON.stringify(rows));

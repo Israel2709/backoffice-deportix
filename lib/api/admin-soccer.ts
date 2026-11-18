@@ -1420,7 +1420,17 @@ export async function replaceStandings(
 ): List<SoccerStanding> {
   const { leagueId, year } = parseSeasonId(seasonId);
 
+  if (!leagueId.trim()) {
+    throw new Error("No se pudo resolver la liga de la temporada.");
+  }
+
   for (const row of standings) {
+    const teamId = row.team_id?.trim() ?? "";
+    if (!teamId) {
+      throw new Error(
+        "Hay filas de clasificación sin equipo. Recarga la página o vuelve a asociar participantes.",
+      );
+    }
     const wins = row.wins ?? 0;
     const draws = row.draws ?? 0;
     const losses = row.losses ?? 0;
@@ -1428,7 +1438,7 @@ export async function replaceStandings(
       method: "POST",
       body: JSON.stringify({
         league: { id: leagueId, season: year },
-        team: { id: row.team_id },
+        team: { id: teamId },
         rank: row.rank,
         points: row.points,
         goalsDiff: row.goals_for - row.goals_against,

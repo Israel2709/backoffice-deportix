@@ -94,57 +94,108 @@ export function SeasonStandingsPanel({ seasonId }: { seasonId: string }) {
   }, [seasonTeamsQuery.data, orphanTeamsQuery.data]);
 
   useEffect(() => {
+    const participants = participantsQuery.data?.data ?? [];
     const standings = standingsQuery.data?.data ?? [];
-    if (standings.length > 0) {
-      const next = standings.map((s, index) => ({
-        team_id: s.team_id,
-        team_name: s.team_name ?? null,
-        team_logo: s.team_logo ?? null,
-        rank: s.rank ?? index + 1,
-        played: s.played ?? 0,
-        goals_for: s.goals_for ?? 0,
-        goals_against: s.goals_against ?? 0,
-        points: s.points ?? 0,
-      }));
+
+    // Index standings by resolved team id (Firestore or external) and by name
+    // so rows with empty `team.id` from the BFF can still merge.
+    const standingByTeamId = new Map<string, (typeof standings)[number]>();
+    const standingByName = new Map<string, (typeof standings)[number]>();
+    for (const s of standings) {
+      const rawId = s.team_id?.trim() ?? "";
+      if (rawId) {
+        standingByTeamId.set(rawId, s);
+        const resolved = teamsById.get(rawId);
+        if (resolved) standingByTeamId.set(resolved.id, s);
+      }
+      const nameKey = (s.team_name ?? "").trim().toLocaleLowerCase("es");
+      if (nameKey) standingByName.set(nameKey, s);
+    }
+
+    if (participants.length > 0) {
+      const next = participants.map((p, index) => {
+        const team = teamsById.get(p.team_id);
+        const canonicalId = team?.id || p.team_id;
+        const nameKey = team
+          ? teamDisplayName(team).trim().toLocaleLowerCase("es")
+          : "";
+        const standing =
+          standingByTeamId.get(p.team_id) ||
+          standingByTeamId.get(canonicalId) ||
+          (nameKey ? standingByName.get(nameKey) : undefined);
+
+        return {
+          team_id: canonicalId,
+          team_name:
+            standing?.team_name ??
+            (team ? teamDisplayName(team) : null),
+          team_logo:
+            standing?.team_logo ?? (team ? teamLogoUrl(team) : null),
+          rank: standing?.rank ?? index + 1,
+          played: standing?.played ?? 0,
+          goals_for: standing?.goals_for ?? 0,
+          goals_against: standing?.goals_against ?? 0,
+          points: standing?.points ?? 0,
+        };
+      });
+
+      // Keep standings for teams no longer in participants (orphan rows).
+      const seen = new Set(next.map((row) => row.team_id));
+      for (const s of standings) {
+        const rawId = s.team_id?.trim() ?? "";
+        const resolved = rawId ? teamsById.get(rawId) : undefined;
+        const id = resolved?.id || rawId;
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        next.push({
+          team_id: id,
+          team_name: s.team_name ?? null,
+          team_logo: s.team_logo ?? null,
+          rank: s.rank ?? next.length + 1,
+          played: s.played ?? 0,
+          goals_for: s.goals_for ?? 0,
+          goals_against: s.goals_against ?? 0,
+          points: s.points ?? 0,
+        });
+      }
+
+      next.sort((a, b) => a.rank - b.rank || a.team_id.localeCompare(b.team_id));
       setRows(next);
       setBaseline(JSON.stringify(next));
       return;
     }
 
-    const participants = participantsQuery.data?.data ?? [];
-    if (participants.length === 0) return;
-    const next = participants.map((p, index) => ({
-      team_id: p.team_id,
-      team_name: null as string | null,
-      team_logo: null as string | null,
-      rank: index + 1,
-      played: 0,
-      goals_for: 0,
-      goals_against: 0,
-      points: 0,
-    }));
+    if (standings.length === 0) return;
+    const next = standings
+      .map((s, index) => {
+        const rawId = s.team_id?.trim() ?? "";
+        const resolved = rawId ? teamsById.get(rawId) : undefined;
+        return {
+          team_id: resolved?.id || rawId,
+          team_name: s.team_name ?? null,
+          team_logo: s.team_logo ?? null,
+          rank: s.rank ?? index + 1,
+          played: s.played ?? 0,
+          goals_for: s.goals_for ?? 0,
+          goals_against: s.goals_against ?? 0,
+          points: s.points ?? 0,
+        };
+      })
+      .filter((row) => row.team_id);
     setRows(next);
     setBaseline(JSON.stringify(next));
-  }, [standingsQuery.data, participantsQuery.data]);
+  }, [standingsQuery.data, participantsQuery.data, teamsById]);
 
   const dirty = JSON.stringify(rows) !== baseline;
   useDirtyGuard(dirty);
 
   const saveMutation = useMutation({
     mutationFn: () => {
-      const baselineRows = JSON.parse(baseline) as StandingRow[];
-      const baselineByTeam = new Map(
-        baselineRows.map((row) => [row.team_id, row]),
-      );
-      const toPersist = rows.filter((row) => {
-        const original = baselineByTeam.get(row.team_id);
-        if (!original) return true;
-        return JSON.stringify(row) !== JSON.stringify(original);
-      });
-
+      // Persist the full table so participantes without prior standings
+      // remain visible after reload (POST upserts; partial saves dropped them).
       return replaceStandings(
         seasonId,
-        toPersist.map((row) => ({
+        rows.map((row) => ({
           ...row,
           wins: 0,
           draws: 0,

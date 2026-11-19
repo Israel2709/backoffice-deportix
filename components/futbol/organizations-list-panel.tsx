@@ -55,7 +55,7 @@ export function OrganizationsListPanel() {
 
   return (
     <>
-      <CountryCardsGrid className="!grid-cols-2 sm:!grid-cols-3 md:!grid-cols-4 lg:!grid-cols-5">
+      <CountryCardsGrid className="!grid-cols-2 sm:!grid-cols-3 md:!grid-cols-4 lg:!grid-cols-6">
         {rows.map((org) => {
           const unassignedCount = org.leagueCount ?? org.leagues.length;
           return (

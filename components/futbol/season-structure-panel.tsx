@@ -52,9 +52,19 @@ export function SeasonStructurePanel({ seasonId }: { seasonId: string }) {
           phase: r.phase || null,
         })),
       ),
-    onSuccess: () => {
+    onSuccess: (result) => {
       toast.success("Estructura guardada");
-      setBaseline(JSON.stringify(rows));
+      const next = (result.data ?? []).map((r) => ({
+        name: r.name,
+        position: r.position,
+        phase: r.phase ?? "Fase Regular",
+      }));
+      setRows(next);
+      setBaseline(JSON.stringify(next));
+      queryClient.setQueryData(
+        ["admin", "soccer", "rounds", seasonId],
+        result,
+      );
       void queryClient.invalidateQueries({
         queryKey: ["admin", "soccer", "rounds", seasonId],
       });

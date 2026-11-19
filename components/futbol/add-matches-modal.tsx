@@ -13,6 +13,7 @@ import {
   type MatchBoStatus,
   type SoccerTeam,
 } from "@/lib/api/soccer-types";
+import { syncStandingsGoalsFromMatches } from "@/lib/soccer/sync-standings-goals";
 import { Button } from "@/components/ui/button";
 import { Field, TextInput, TextSelect } from "@/components/capture/field";
 import { cn } from "@/lib/utils";
@@ -101,7 +102,7 @@ export function AddMatchesModal({
   }, [rounds]);
 
   const saveMutation = useMutation({
-    mutationFn: (rows: DraftMatch[]) => {
+    mutationFn: async (rows: DraftMatch[]) => {
       if (rows.length === 0) {
         throw new Error("Agrega al menos un partido antes de guardar.");
       }
@@ -115,7 +116,7 @@ export function AddMatchesModal({
           throw new Error("Local y visitante deben ser equipos distintos.");
         }
       }
-      return saveMatchesBatch(
+      const saved = await saveMatchesBatch(
         seasonId,
         rows.map((row) => {
           const home = teamsById.get(row.home_team_id);
@@ -136,6 +137,8 @@ export function AddMatchesModal({
           };
         }),
       );
+      await syncStandingsGoalsFromMatches(seasonId);
+      return saved;
     },
     onSuccess: (_data, rows) => {
       toast.success(
@@ -145,6 +148,9 @@ export function AddMatchesModal({
       );
       void queryClient.invalidateQueries({
         queryKey: ["admin", "soccer", "matches", seasonId],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["admin", "soccer", "standings", seasonId],
       });
       onClose();
     },
@@ -334,14 +340,14 @@ export function AddMatchesModal({
                 ))}
               </TextSelect>
             </Field>
-            <Field label="ML">
+            <Field label="Goles local">
               <TextInput
                 inputMode="numeric"
                 value={form.goals_home}
                 onChange={(e) => updateForm({ goals_home: e.target.value })}
               />
             </Field>
-            <Field label="MV">
+            <Field label="Goles visitante">
               <TextInput
                 inputMode="numeric"
                 value={form.goals_away}
@@ -404,8 +410,12 @@ export function AddMatchesModal({
                     <th className="border-b border-dx-line px-2 py-2.5">
                       Local
                     </th>
-                    <th className="border-b border-dx-line px-2 py-2.5">ML</th>
-                    <th className="border-b border-dx-line px-2 py-2.5">MV</th>
+                    <th className="border-b border-dx-line px-2 py-2.5">
+                      Goles L
+                    </th>
+                    <th className="border-b border-dx-line px-2 py-2.5">
+                      Goles V
+                    </th>
                     <th className="border-b border-dx-line px-2 py-2.5 text-right">
                       Visitante
                     </th>

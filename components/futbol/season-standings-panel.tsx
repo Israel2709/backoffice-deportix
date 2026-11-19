@@ -373,8 +373,9 @@ export function SeasonStandingsPanel({ seasonId }: { seasonId: string }) {
       </div>
 
       <Note>
-        La posición y los puntos representan la clasificación oficial.{" "}
-        <b>DG = GF − GC</b> se calcula automáticamente.
+        La posición, PJ y puntos se capturan aquí.{" "}
+        <b>GF/GC</b> se recalculan desde los partidos con marcador al guardar
+        en Partidos. <b>DG = GF − GC</b> se calcula automáticamente.
       </Note>
 
       <StickyActions

@@ -27,6 +27,7 @@ import { TextSelect } from "@/components/capture/field";
 import { AddMatchesModal } from "@/components/futbol/add-matches-modal";
 import { cn } from "@/lib/utils";
 import { combineUtcDateTime, splitUtcDateTime } from "@/lib/format-date";
+import { syncStandingsGoalsFromMatches } from "@/lib/soccer/sync-standings-goals";
 
 type MatchRow = {
   key: string;
@@ -173,7 +174,7 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
   }, [rows, roundFilter]);
 
   const saveMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const baselineRows = JSON.parse(baseline) as MatchRow[];
       const baselineByKey = new Map(baselineRows.map((row) => [row.key, row]));
       const toPersist = rows.filter((row) => {
@@ -191,7 +192,7 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
         }
       }
 
-      return saveMatchesBatch(
+      const saved = await saveMatchesBatch(
         seasonId,
         toPersist.map((row) => {
           const home = teamsById.get(row.home_team_id);
@@ -213,12 +214,17 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
           };
         }),
       );
+      await syncStandingsGoalsFromMatches(seasonId);
+      return saved;
     },
     onSuccess: () => {
       toast.success("Partidos guardados");
       setBaseline(JSON.stringify(rows));
       void queryClient.invalidateQueries({
         queryKey: ["admin", "soccer", "matches", seasonId],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["admin", "soccer", "standings", seasonId],
       });
     },
     onError: (error: Error) => toast.error(error.message),
@@ -282,8 +288,8 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
               <th className="border-b border-dx-line px-2 py-2.5">Hora</th>
               <th className="border-b border-dx-line px-2 py-2.5">Logo L</th>
               <th className="border-b border-dx-line px-2 py-2.5">Local</th>
-              <th className="border-b border-dx-line px-2 py-2.5">ML</th>
-              <th className="border-b border-dx-line px-2 py-2.5">MV</th>
+              <th className="border-b border-dx-line px-2 py-2.5">Goles L</th>
+              <th className="border-b border-dx-line px-2 py-2.5">Goles V</th>
               <th className="border-b border-dx-line px-2 py-2.5 text-right">
                 Visitante
               </th>
@@ -427,8 +433,9 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
       </div>
 
       <Note>
-        Orden visual: Logo Local → Nombre Local → ML → MV → Visitante → Logo
-        Visitante. Guardado consolidado por lote.
+        Orden visual: Logo Local → Nombre Local → Goles L → Goles V →
+        Visitante → Logo Visitante. Al guardar, los goles de partidos con
+        marcador completo actualizan GF/GC en Clasificación.
       </Note>
 
       <StickyActions

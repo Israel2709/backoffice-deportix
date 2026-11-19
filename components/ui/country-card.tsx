@@ -34,7 +34,7 @@ function CountryCardBody({
           <img
             src={imageUrl}
             alt=""
-            className="absolute inset-0 h-full w-full object-cover"
+            className="absolute inset-0 h-full w-full object-contain p-3"
           />
         ) : (
           <span

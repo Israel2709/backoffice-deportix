@@ -385,7 +385,7 @@ Plantilla de la temporada en una sola llamada. Usado en Partidos y Tabla para re
 
 #### `GET /fixtures/rounds?league={leagueId}&season={year}`
 
-Lista los nombres de jornada.
+Lista los nombres de jornada. La API responde `Cache-Control: no-store` para que las jornadas recién creadas se vean al instante en Estructura (antes el CDN podía devolver la lista vacía hasta 5 minutos).
 
 #### `POST /fixtures/rounds?league={leagueId}&season={year}`
 

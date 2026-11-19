@@ -1294,7 +1294,32 @@ export async function replaceRounds(
     );
   }
 
-  return listRounds(seasonId);
+  // Prefer a fresh list, but if CDN still serves a stale empty/partial
+  // response after POST, keep the payload the analyst just saved.
+  const listed = await listRounds(seasonId);
+  if (listed.data.length >= sorted.length) {
+    return {
+      data: listed.data.map((row, index) => {
+        const fromPayload = sorted.find((r) => r.name === row.name);
+        return {
+          ...row,
+          position: fromPayload?.position ?? row.position ?? index + 1,
+          phase: fromPayload?.phase ?? row.phase ?? null,
+        };
+      }),
+    };
+  }
+
+  return {
+    data: sorted.map((round) => ({
+      id: round.name,
+      season_id: seasonId,
+      league_id: leagueId,
+      name: round.name,
+      position: round.position,
+      phase: round.phase ?? null,
+    })),
+  };
 }
 
 // ─── Matches / fixtures ───────────────────────────────────────────────────────

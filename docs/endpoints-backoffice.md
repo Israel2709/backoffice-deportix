@@ -369,7 +369,7 @@ Recibe `{ year, current, start, end }`. `current` es verdadero cuando el estado 
 
 Lista los equipos inscritos en la temporada.
 
-Si viene vacío o falla, la pantalla usa `GET /teams?league={leagueId}&season={year}` como respaldo.
+Si viene vacío o falla, el BO trata el roster como vacío (Partidos permanece bloqueado hasta haber participantes y jornadas).
 
 El selector «Agregar» carga el catálogo con `GET /teams?organization={orgId}` (o `?league=` si la liga aún no tiene organización).
 
@@ -418,11 +418,11 @@ Actualiza un partido. Mismo cuerpo que el alta.
 
 #### `GET /standings?league={leagueId}&season={year}`
 
-Lista la clasificación.
+Lista la clasificación. Responde `Cache-Control: no-store`. El BO también deduplica por equipo.
 
 #### `POST /standings`
 
-Guarda una fila de clasificación. Se llama una vez por equipo. No hay reemplazo masivo ni borrado.
+Guarda/actualiza una fila de clasificación (upsert por liga+temporada+equipo). El BO la llama una vez por equipo al sincronizar desde partidos finalizados.
 
 Recibe `{ league: { id, season }, team: { id }, rank, points, goalsDiff, all: { played, win, draw, lose, goals: { for, against } } }`.
 

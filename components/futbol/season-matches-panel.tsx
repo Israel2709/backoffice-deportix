@@ -2,6 +2,7 @@
 import { LoadingBlock } from "@/components/ui/spinner";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -43,7 +44,12 @@ type MatchRow = {
   goals_away: string;
   round_id: string;
   round_name: string;
+  round_phase: string;
+  round_position: number;
 };
+
+type SortColumn = "phase" | "round" | "date";
+type SortState = { column: SortColumn; direction: "asc" | "desc" } | null;
 
 function buildTeamLookups(teams: SoccerTeam[]) {
   const byId = new Map<string, SoccerTeam>();
@@ -75,6 +81,7 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
   const [baseline, setBaseline] = useState("[]");
   const [roundFilter, setRoundFilter] = useState<string>("all");
   const [addOpen, setAddOpen] = useState(false);
+  const [sort, setSort] = useState<SortState>(null);
 
   const matchesQuery = useQuery({
     queryKey: ["admin", "soccer", "matches", seasonId],
@@ -159,6 +166,9 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
         goals_away: m.goals?.away == null ? "" : String(m.goals.away),
         round_id: round?.id ?? "",
         round_name: m.league?.round ?? round?.name ?? "",
+        // BFF rounds list has no phase; keep the same default as Estructura.
+        round_phase: (round?.phase ?? "").trim() || "Fase Regular",
+        round_position: round?.position ?? Number.MAX_SAFE_INTEGER,
       };
     });
     setRows(next);
@@ -168,10 +178,94 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
   const dirty = JSON.stringify(rows) !== baseline;
   useDirtyGuard(dirty);
 
+  const roundsById = useMemo(() => {
+    const map = new Map(
+      (roundsQuery.data?.data ?? []).map((round) => [round.id, round]),
+    );
+    return map;
+  }, [roundsQuery.data]);
+
   const visibleRows = useMemo(() => {
-    if (roundFilter === "all") return rows;
-    return rows.filter((r) => r.round_id === roundFilter);
-  }, [rows, roundFilter]);
+    const filtered =
+      roundFilter === "all"
+        ? [...rows]
+        : rows.filter((r) => r.round_id === roundFilter);
+
+    if (!sort) return filtered;
+
+    const dir = sort.direction === "asc" ? 1 : -1;
+    filtered.sort((a, b) => {
+      if (sort.column === "phase") {
+        const ap = a.round_phase || "—";
+        const bp = b.round_phase || "—";
+        const cmp = ap.localeCompare(bp, "es", { sensitivity: "base" });
+        if (cmp !== 0) return cmp * dir;
+        return (
+          (a.round_position - b.round_position ||
+            a.round_name.localeCompare(b.round_name, "es") ||
+            `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`)) * dir
+        );
+      }
+      if (sort.column === "round") {
+        const cmp =
+          a.round_position - b.round_position ||
+          a.round_name.localeCompare(b.round_name, "es", {
+            sensitivity: "base",
+            numeric: true,
+          });
+        if (cmp !== 0) return cmp * dir;
+        return `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`) * dir;
+      }
+      // date
+      const cmp = `${a.date}T${a.time || "00:00"}`.localeCompare(
+        `${b.date}T${b.time || "00:00"}`,
+      );
+      if (cmp !== 0) return cmp * dir;
+      return (
+        a.round_position - b.round_position ||
+        a.round_name.localeCompare(b.round_name, "es")
+      );
+    });
+    return filtered;
+  }, [rows, roundFilter, sort]);
+
+  function toggleSort(column: SortColumn) {
+    setSort((prev) => {
+      if (!prev || prev.column !== column) {
+        return { column, direction: "asc" };
+      }
+      if (prev.direction === "asc") {
+        return { column, direction: "desc" };
+      }
+      return null;
+    });
+  }
+
+  function SortHeader({
+    column,
+    label,
+  }: {
+    column: SortColumn;
+    label: string;
+  }) {
+    const active = sort?.column === column;
+    return (
+      <button
+        type="button"
+        onClick={() => toggleSort(column)}
+        className="inline-flex items-center gap-1.5 text-[11px] font-extrabold tracking-wide text-[#667085] uppercase hover:text-dx-blue"
+      >
+        {label}
+        {!active ? (
+          <ArrowUpDown className="h-3.5 w-3.5 opacity-40" />
+        ) : sort.direction === "asc" ? (
+          <ArrowUp className="h-3.5 w-3.5 text-dx-blue" />
+        ) : (
+          <ArrowDown className="h-3.5 w-3.5 text-dx-blue" />
+        )}
+      </button>
+    );
+  }
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -232,7 +326,23 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
 
   function updateRow(key: string, patch: Partial<MatchRow>) {
     setRows((prev) =>
-      prev.map((row) => (row.key === key ? { ...row, ...patch } : row)),
+      prev.map((row) => {
+        if (row.key !== key) return row;
+        const next = { ...row, ...patch };
+        const home = next.goals_home.trim();
+        const away = next.goals_away.trim();
+        // Both scores filled (incl. 0) → Finalizado automatically.
+        if (
+          home !== "" &&
+          away !== "" &&
+          Number.isFinite(Number(home)) &&
+          Number.isFinite(Number(away)) &&
+          next.status !== "finished"
+        ) {
+          next.status = "finished";
+        }
+        return next;
+      }),
     );
   }
 
@@ -281,10 +391,18 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
       </div>
 
       <div className="overflow-x-auto rounded-[14px] border border-dx-line bg-white">
-        <table className="w-full min-w-[980px] border-separate border-spacing-0 text-left text-[13px]">
+        <table className="w-full min-w-[1100px] border-separate border-spacing-0 text-left text-[13px]">
           <thead>
             <tr className="bg-[#f8fafc] text-[11px] tracking-wide text-[#667085] uppercase">
-              <th className="border-b border-dx-line px-2 py-2.5">Fecha</th>
+              <th className="border-b border-dx-line px-2 py-2.5">
+                <SortHeader column="phase" label="Fase" />
+              </th>
+              <th className="border-b border-dx-line px-2 py-2.5">
+                <SortHeader column="round" label="Jornada" />
+              </th>
+              <th className="border-b border-dx-line px-2 py-2.5">
+                <SortHeader column="date" label="Fecha" />
+              </th>
               <th className="border-b border-dx-line px-2 py-2.5">Hora</th>
               <th className="border-b border-dx-line px-2 py-2.5">Logo L</th>
               <th className="border-b border-dx-line px-2 py-2.5">Local</th>
@@ -301,8 +419,20 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
             {visibleRows.map((row) => {
               const home = teamsById.get(row.home_team_id);
               const away = teamsById.get(row.away_team_id);
+              const round = roundsById.get(row.round_id);
+              const phaseLabel =
+                row.round_phase ||
+                round?.phase?.trim() ||
+                (row.round_name || round?.name ? "Fase Regular" : "—");
+              const jornadaLabel = row.round_name || round?.name || "—";
               return (
                 <tr key={row.key} className="hover:bg-[#fbfdff]">
+                  <td className="border-b border-dx-line px-2 py-1.5 text-[#41516b]">
+                    {phaseLabel}
+                  </td>
+                  <td className="border-b border-dx-line px-2 py-1.5 font-semibold text-dx-ink">
+                    {jornadaLabel}
+                  </td>
                   <td className="border-b border-dx-line px-2 py-1.5">
                     <input
                       type="date"
@@ -313,8 +443,7 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
                         updateRow(row.key, { date: e.target.value })
                       }
                     />
-                  </td>
-                  <td className="border-b border-dx-line px-2 py-1.5">
+                  </td>                  <td className="border-b border-dx-line px-2 py-1.5">
                     <input
                       type="time"
                       className={cn(inputClass, "w-[82px]")}
@@ -433,9 +562,9 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
       </div>
 
       <Note>
-        Orden visual: Logo Local → Nombre Local → Goles L → Goles V →
-        Visitante → Logo Visitante. Al guardar, los goles de partidos con
-        marcador completo actualizan GF/GC en Clasificación.
+        Fase y jornada son solo lectura (vienen de la estructura). Puedes
+        ordenar por Fase, Jornada o Fecha. Al guardar, los goles con marcador
+        completo actualizan GF/GC en Clasificación.
       </Note>
 
       <StickyActions
@@ -454,6 +583,11 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
         participantTeams={participantTeams}
         teamsById={teamsById}
         defaultRoundId={roundFilter === "all" ? "" : roundFilter}
+        existingMatches={rows.map((row) => ({
+          round_id: row.round_id,
+          home_team_id: row.home_team_id,
+          away_team_id: row.away_team_id,
+        }))}
       />
     </div>
   );

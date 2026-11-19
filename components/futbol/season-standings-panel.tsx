@@ -2,67 +2,51 @@
 import { LoadingBlock } from "@/components/ui/spinner";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { toast } from "sonner";
 import {
   listParticipants,
+  listSeasonMatches,
   listSeasonTeams,
-  listStandings,
   listTeamsByIds,
-  replaceStandings,
 } from "@/lib/api/admin-soccer";
 import {
   teamDisplayName,
   teamLogoUrl,
   type SoccerTeam,
 } from "@/lib/api/soccer-types";
-import { useDirtyGuard } from "@/hooks/use-dirty-guard";
 import { Button } from "@/components/ui/button";
 import { Note } from "@/components/ui/note";
-import { StickyActions } from "@/components/capture/sticky-actions";
-import { cn } from "@/lib/utils";
-
-type StandingRow = {
-  team_id: string;
-  team_name?: string | null;
-  team_logo?: string | null;
-  rank: number;
-  played: number;
-  goals_for: number;
-  goals_against: number;
-  points: number;
-};
-
-const inputClass =
-  "mx-auto max-w-[74px] rounded-[7px] border border-[#d9e0ea] bg-white px-2 py-1.5 text-center text-[13px]";
+import { computeStandingsFromMatches } from "@/lib/soccer/compute-standings";
+import { syncStandingsGoalsFromMatches } from "@/lib/soccer/sync-standings-goals";
 
 export function SeasonStandingsPanel({ seasonId }: { seasonId: string }) {
   const queryClient = useQueryClient();
-  const [rows, setRows] = useState<StandingRow[]>([]);
-  const [baseline, setBaseline] = useState("[]");
 
-  const standingsQuery = useQuery({
-    queryKey: ["admin", "soccer", "standings", seasonId],
-    queryFn: () => listStandings(seasonId),
+  const matchesQuery = useQuery({
+    queryKey: ["admin", "soccer", "matches", seasonId],
+    queryFn: () => listSeasonMatches(seasonId),
   });
   const participantsQuery = useQuery({
     queryKey: ["admin", "soccer", "participants", seasonId],
     queryFn: () => listParticipants(seasonId),
   });
-
-  const teamIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const p of participantsQuery.data?.data ?? []) ids.add(p.team_id);
-    for (const s of standingsQuery.data?.data ?? []) {
-      if (s.team_id) ids.add(s.team_id);
-    }
-    return [...ids];
-  }, [participantsQuery.data, standingsQuery.data]);
-
   const seasonTeamsQuery = useQuery({
     queryKey: ["admin", "soccer", "teams", "season", seasonId],
     queryFn: () => listSeasonTeams(seasonId),
   });
+
+  const participantIds = useMemo(
+    () =>
+      [
+        ...new Set(
+          (participantsQuery.data?.data ?? [])
+            .map((p) => p.team_id?.trim())
+            .filter((id): id is string => Boolean(id)),
+        ),
+      ],
+    [participantsQuery.data],
+  );
 
   const missingTeamIds = useMemo(() => {
     const known = new Set<string>();
@@ -71,8 +55,8 @@ export function SeasonStandingsPanel({ seasonId }: { seasonId: string }) {
       const external = String(team.team.id ?? "").trim();
       if (external) known.add(external);
     }
-    return teamIds.filter((id) => id && !known.has(id));
-  }, [seasonTeamsQuery.data, teamIds]);
+    return participantIds.filter((id) => id && !known.has(id));
+  }, [seasonTeamsQuery.data, participantIds]);
 
   const orphanTeamsQuery = useQuery({
     queryKey: ["admin", "soccer", "teams-by-ids", seasonId, missingTeamIds],
@@ -93,119 +77,41 @@ export function SeasonStandingsPanel({ seasonId }: { seasonId: string }) {
     return map;
   }, [seasonTeamsQuery.data, orphanTeamsQuery.data]);
 
-  useEffect(() => {
-    const participants = participantsQuery.data?.data ?? [];
-    const standings = standingsQuery.data?.data ?? [];
+  const allTeams = useMemo(
+    () => [
+      ...(seasonTeamsQuery.data?.data ?? []),
+      ...(orphanTeamsQuery.data?.data ?? []),
+    ],
+    [seasonTeamsQuery.data, orphanTeamsQuery.data],
+  );
 
-    // Index standings by resolved team id (Firestore or external) and by name
-    // so rows with empty `team.id` from the BFF can still merge.
-    const standingByTeamId = new Map<string, (typeof standings)[number]>();
-    const standingByName = new Map<string, (typeof standings)[number]>();
-    for (const s of standings) {
-      const rawId = s.team_id?.trim() ?? "";
-      if (rawId) {
-        standingByTeamId.set(rawId, s);
-        const resolved = teamsById.get(rawId);
-        if (resolved) standingByTeamId.set(resolved.id, s);
-      }
-      const nameKey = (s.team_name ?? "").trim().toLocaleLowerCase("es");
-      if (nameKey) standingByName.set(nameKey, s);
+  // UI source of truth: always recompute from current finished matches.
+  // Avoids stale CDN ranks and duplicate Firestore standing docs.
+  const rows = useMemo(() => {
+    if (participantIds.length === 0 && !(matchesQuery.data?.data?.length)) {
+      return [];
     }
+    return computeStandingsFromMatches({
+      teamIds: participantIds,
+      matches: matchesQuery.data?.data ?? [],
+      teams: allTeams,
+    }).map((row) => {
+      const team = teamsById.get(row.team_id);
+      return {
+        ...row,
+        team_name: team ? teamDisplayName(team) : null,
+        team_logo: team ? teamLogoUrl(team) : null,
+      };
+    });
+  }, [participantIds, matchesQuery.data, allTeams, teamsById]);
 
-    if (participants.length > 0) {
-      const next = participants.map((p, index) => {
-        const team = teamsById.get(p.team_id);
-        const canonicalId = team?.id || p.team_id;
-        const nameKey = team
-          ? teamDisplayName(team).trim().toLocaleLowerCase("es")
-          : "";
-        const standing =
-          standingByTeamId.get(p.team_id) ||
-          standingByTeamId.get(canonicalId) ||
-          (nameKey ? standingByName.get(nameKey) : undefined);
-
-        return {
-          team_id: canonicalId,
-          team_name:
-            standing?.team_name ??
-            (team ? teamDisplayName(team) : null),
-          team_logo:
-            standing?.team_logo ?? (team ? teamLogoUrl(team) : null),
-          rank: standing?.rank ?? index + 1,
-          played: standing?.played ?? 0,
-          goals_for: standing?.goals_for ?? 0,
-          goals_against: standing?.goals_against ?? 0,
-          points: standing?.points ?? 0,
-        };
-      });
-
-      // Keep standings for teams no longer in participants (orphan rows).
-      const seen = new Set(next.map((row) => row.team_id));
-      for (const s of standings) {
-        const rawId = s.team_id?.trim() ?? "";
-        const resolved = rawId ? teamsById.get(rawId) : undefined;
-        const id = resolved?.id || rawId;
-        if (!id || seen.has(id)) continue;
-        seen.add(id);
-        next.push({
-          team_id: id,
-          team_name: s.team_name ?? null,
-          team_logo: s.team_logo ?? null,
-          rank: s.rank ?? next.length + 1,
-          played: s.played ?? 0,
-          goals_for: s.goals_for ?? 0,
-          goals_against: s.goals_against ?? 0,
-          points: s.points ?? 0,
-        });
-      }
-
-      next.sort((a, b) => a.rank - b.rank || a.team_id.localeCompare(b.team_id));
-      setRows(next);
-      setBaseline(JSON.stringify(next));
-      return;
-    }
-
-    if (standings.length === 0) return;
-    const next = standings
-      .map((s, index) => {
-        const rawId = s.team_id?.trim() ?? "";
-        const resolved = rawId ? teamsById.get(rawId) : undefined;
-        return {
-          team_id: resolved?.id || rawId,
-          team_name: s.team_name ?? null,
-          team_logo: s.team_logo ?? null,
-          rank: s.rank ?? index + 1,
-          played: s.played ?? 0,
-          goals_for: s.goals_for ?? 0,
-          goals_against: s.goals_against ?? 0,
-          points: s.points ?? 0,
-        };
-      })
-      .filter((row) => row.team_id);
-    setRows(next);
-    setBaseline(JSON.stringify(next));
-  }, [standingsQuery.data, participantsQuery.data, teamsById]);
-
-  const dirty = JSON.stringify(rows) !== baseline;
-  useDirtyGuard(dirty);
-
-  const saveMutation = useMutation({
-    mutationFn: () => {
-      // Persist the full table so participantes without prior standings
-      // remain visible after reload (POST upserts; partial saves dropped them).
-      return replaceStandings(
-        seasonId,
-        rows.map((row) => ({
-          ...row,
-          wins: 0,
-          draws: 0,
-          losses: 0,
-        })),
-      );
-    },
+  const syncMutation = useMutation({
+    mutationFn: () => syncStandingsGoalsFromMatches(seasonId),
     onSuccess: () => {
-      toast.success("Clasificación guardada");
-      setBaseline(JSON.stringify(rows));
+      toast.success("Clasificación guardada desde partidos");
+      void queryClient.invalidateQueries({
+        queryKey: ["admin", "soccer", "matches", seasonId],
+      });
       void queryClient.invalidateQueries({
         queryKey: ["admin", "soccer", "standings", seasonId],
       });
@@ -213,14 +119,21 @@ export function SeasonStandingsPanel({ seasonId }: { seasonId: string }) {
     onError: (error: Error) => toast.error(error.message),
   });
 
-  function updateRow(teamId: string, patch: Partial<StandingRow>) {
-    setRows((prev) =>
-      prev.map((row) => (row.team_id === teamId ? { ...row, ...patch } : row)),
-    );
+  const loading =
+    matchesQuery.isLoading ||
+    participantsQuery.isLoading ||
+    seasonTeamsQuery.isLoading;
+
+  if (loading) {
+    return <LoadingBlock label="Cargando clasificación…" />;
   }
 
-  if (standingsQuery.isLoading || participantsQuery.isLoading) {
-    return <LoadingBlock label="Cargando clasificación…" />;
+  if (matchesQuery.isError) {
+    return (
+      <div className="rounded-xl border border-[#f1dfa9] bg-[#fff9e8] px-3.5 py-3 text-[13px] text-[#7d5a00]">
+        {(matchesQuery.error as Error).message}
+      </div>
+    );
   }
 
   return (
@@ -229,23 +142,17 @@ export function SeasonStandingsPanel({ seasonId }: { seasonId: string }) {
         <div>
           <h2 className="text-[21px] font-semibold">Clasificación</h2>
           <div className="text-sm text-dx-muted">
-            {rows.length} equipos · DG calculada automáticamente
+            {rows.length} equipos · calculada desde partidos finalizados
           </div>
         </div>
         <Button
           variant="secondary"
-          onClick={() => {
-            const invalid = rows.some(
-              (r) => r.rank < 1 || r.played < 0 || r.points < 0,
-            );
-            toast.message(
-              invalid
-                ? "Hay valores inválidos en la tabla"
-                : "Tabla válida para guardar",
-            );
-          }}
+          disabled={syncMutation.isPending}
+          onClick={() => syncMutation.mutate()}
         >
-          Validar tabla
+          {syncMutation.isPending
+            ? "Guardando…"
+            : "Guardar clasificación"}
         </Button>
       </div>
 
@@ -289,15 +196,9 @@ export function SeasonStandingsPanel({ seasonId }: { seasonId: string }) {
               return (
                 <tr key={row.team_id}>
                   <td className="border-b border-dx-line px-3 py-2 text-center">
-                    <input
-                      className={cn(inputClass, "max-w-[56px] font-extrabold")}
-                      value={row.rank}
-                      onChange={(e) =>
-                        updateRow(row.team_id, {
-                          rank: Number(e.target.value) || 0,
-                        })
-                      }
-                    />
+                    <span className="inline-flex min-w-[36px] justify-center text-[15px] font-extrabold text-dx-ink">
+                      {row.rank}
+                    </span>
                   </td>
                   <td className="border-b border-dx-line px-3 py-2">
                     <div className="flex items-center gap-2">
@@ -316,54 +217,22 @@ export function SeasonStandingsPanel({ seasonId }: { seasonId: string }) {
                       <strong>{name ?? row.team_id}</strong>
                     </div>
                   </td>
-                  <td className="border-b border-dx-line px-3 py-2 text-center">
-                    <input
-                      className={inputClass}
-                      value={row.played}
-                      onChange={(e) =>
-                        updateRow(row.team_id, {
-                          played: Number(e.target.value) || 0,
-                        })
-                      }
-                    />
+                  <td className="border-b border-dx-line px-3 py-2 text-center font-semibold text-[#41516b]">
+                    {row.played}
                   </td>
-                  <td className="border-b border-dx-line px-3 py-2 text-center">
-                    <input
-                      className={inputClass}
-                      value={row.goals_for}
-                      onChange={(e) =>
-                        updateRow(row.team_id, {
-                          goals_for: Number(e.target.value) || 0,
-                        })
-                      }
-                    />
+                  <td className="border-b border-dx-line px-3 py-2 text-center font-semibold text-[#41516b]">
+                    {row.goals_for}
                   </td>
-                  <td className="border-b border-dx-line px-3 py-2 text-center">
-                    <input
-                      className={inputClass}
-                      value={row.goals_against}
-                      onChange={(e) =>
-                        updateRow(row.team_id, {
-                          goals_against: Number(e.target.value) || 0,
-                        })
-                      }
-                    />
+                  <td className="border-b border-dx-line px-3 py-2 text-center font-semibold text-[#41516b]">
+                    {row.goals_against}
                   </td>
                   <td className="border-b border-dx-line px-3 py-2 text-center">
                     <span className="inline-flex min-w-[62px] justify-center rounded-[7px] border border-[#d9e4f3] bg-[#f2f6fc] px-2 py-1.5 font-extrabold text-[#41516b]">
                       {dg > 0 ? `+${dg}` : dg}
                     </span>
                   </td>
-                  <td className="border-b border-dx-line px-3 py-2 text-center">
-                    <input
-                      className={inputClass}
-                      value={row.points}
-                      onChange={(e) =>
-                        updateRow(row.team_id, {
-                          points: Number(e.target.value) || 0,
-                        })
-                      }
-                    />
+                  <td className="border-b border-dx-line px-3 py-2 text-center text-[15px] font-extrabold text-dx-ink">
+                    {row.points}
                   </td>
                 </tr>
               );
@@ -373,18 +242,10 @@ export function SeasonStandingsPanel({ seasonId }: { seasonId: string }) {
       </div>
 
       <Note>
-        La posición, PJ y puntos se capturan aquí.{" "}
-        <b>GF/GC</b> se recalculan desde los partidos con marcador al guardar
-        en Partidos. <b>DG = GF − GC</b> se calcula automáticamente.
+        La tabla se calcula en vivo desde partidos <b>Finalizado</b> con
+        marcador. <b>Guardar clasificación</b> persiste el resultado en la API
+        (App QD). Pos. = Pts → DG → GF.
       </Note>
-
-      <StickyActions
-        dirty={dirty}
-        saving={saveMutation.isPending}
-        saveLabel="Guardar clasificación"
-        onDiscard={() => setRows(JSON.parse(baseline) as StandingRow[])}
-        onSave={() => saveMutation.mutate()}
-      />
     </div>
   );
 }

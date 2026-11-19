@@ -8,6 +8,8 @@ export type CaptureTabItem = {
   href: string;
   label: string;
   exact?: boolean;
+  disabled?: boolean;
+  disabledTitle?: string;
 };
 
 function normalizePath(path: string) {
@@ -25,6 +27,21 @@ export function CaptureTabs({ items }: { items: CaptureTabItem[] }) {
         const active = item.exact
           ? pathname === href
           : pathname === href || pathname.startsWith(`${href}/`);
+        if (item.disabled) {
+          return (
+            <span
+              key={item.href}
+              title={item.disabledTitle}
+              aria-disabled="true"
+              className={cn(
+                "cursor-not-allowed rounded-lg px-3.5 py-2 text-sm font-bold text-[#9aa3b5] opacity-60",
+                active && "bg-[#f3f5f8]",
+              )}
+            >
+              {item.label}
+            </span>
+          );
+        }
         return (
           <Link
             key={item.href}

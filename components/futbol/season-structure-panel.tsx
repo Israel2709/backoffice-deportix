@@ -78,12 +78,35 @@ export function SeasonStructurePanel({ seasonId }: { seasonId: string }) {
       toast.error("Indica cuántas jornadas generar.");
       return;
     }
-    const generated = Array.from({ length: count }, (_, i) => ({
-      name: `Jornada ${i + 1}`,
-      position: i + 1,
-      phase: phaseName || "Fase Regular",
-    }));
-    setRows(generated);
+
+    // Append (do not replace): e.g. with Jornada 1–4 already saved, generating
+    // 4 more yields Jornada 5–8 for the same or another phase.
+    setRows((prev) => {
+      const jornadaNumbers = prev
+        .map((row) => {
+          const match = /^Jornada\s+(\d+)$/i.exec(row.name.trim());
+          return match ? Number(match[1]) : 0;
+        })
+        .filter((n) => n > 0);
+      const nextName =
+        (jornadaNumbers.length ? Math.max(...jornadaNumbers) : 0) + 1;
+      const nextPosition =
+        (prev.length
+          ? Math.max(...prev.map((row) => row.position))
+          : 0) + 1;
+      const phase = phaseName || "Fase Regular";
+      const generated = Array.from({ length: count }, (_, i) => ({
+        name: `Jornada ${nextName + i}`,
+        position: nextPosition + i,
+        phase,
+      }));
+      return [...prev, ...generated];
+    });
+    toast.success(
+      count === 1
+        ? "1 jornada agregada a la lista"
+        : `${count} jornadas agregadas a la lista`,
+    );
   }
 
   if (roundsQuery.isLoading) {
@@ -116,21 +139,7 @@ export function SeasonStructurePanel({ seasonId }: { seasonId: string }) {
             />
           </Field>
           <Button variant="secondary" onClick={generateJornadas}>
-            Generar jornadas
-          </Button>
-          <Button
-            onClick={() =>
-              setRows((prev) => [
-                ...prev,
-                {
-                  name: `Jornada ${prev.length + 1}`,
-                  position: prev.length + 1,
-                  phase: phaseName || "Fase Regular",
-                },
-              ])
-            }
-          >
-            + Jornada
+            Agregar jornadas
           </Button>
         </div>
       </div>
@@ -192,8 +201,10 @@ export function SeasonStructurePanel({ seasonId }: { seasonId: string }) {
       </div>
 
       <Note>
-        Ejemplo Liga MX: Fase Regular → Jornada 1…17; Liguilla → Cuartos,
-        Semifinales, Final.
+        «Agregar jornadas» suma N jornadas al final (continúa la numeración).
+        Ejemplo: con Jornada 1–4, pedir 4 más crea Jornada 5–8. Luego guarda
+        la estructura. Liguilla u otras fases: cambia el nombre de fase y
+        agrega o edita filas.
       </Note>
 
       <StickyActions

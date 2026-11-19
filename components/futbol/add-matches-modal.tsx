@@ -67,6 +67,32 @@ function emptyForm(defaultRoundId: string): FormState {
   };
 }
 
+/** Both scores filled (incl. 0) → status Finalizado. */
+function hasCompleteScore(goalsHome: string, goalsAway: string): boolean {
+  const home = goalsHome.trim();
+  const away = goalsAway.trim();
+  if (home === "" || away === "") return false;
+  return Number.isFinite(Number(home)) && Number.isFinite(Number(away));
+}
+
+function withAutoFinishedStatus<
+  T extends { goals_home: string; goals_away: string; status: MatchBoStatus },
+>(row: T): T {
+  if (!hasCompleteScore(row.goals_home, row.goals_away)) return row;
+  if (row.status === "finished") return row;
+  return { ...row, status: "finished" };
+}
+
+type ExistingMatchRef = {
+  round_id: string;
+  home_team_id: string;
+  away_team_id: string;
+};
+
+function roundKey(roundId: string | null | undefined): string {
+  return (roundId ?? "").trim();
+}
+
 export function AddMatchesModal({
   open,
   onClose,
@@ -75,6 +101,7 @@ export function AddMatchesModal({
   participantTeams,
   teamsById,
   defaultRoundId = "",
+  existingMatches = [],
 }: {
   open: boolean;
   onClose: () => void;
@@ -83,6 +110,8 @@ export function AddMatchesModal({
   participantTeams: SoccerTeam[];
   teamsById: Map<string, SoccerTeam>;
   defaultRoundId?: string;
+  /** Matches already in the season table (excluded from selectors per jornada). */
+  existingMatches?: ExistingMatchRef[];
 }) {
   const titleId = useId();
   const queryClient = useQueryClient();
@@ -101,11 +130,59 @@ export function AddMatchesModal({
     return map;
   }, [rounds]);
 
+  /** Team ids already playing in a jornada (saved matches + preview). */
+  const usedTeamsByRound = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    const add = (roundId: string, teamId: string) => {
+      const id = teamId.trim();
+      if (!id) return;
+      const key = roundKey(roundId);
+      const set = map.get(key) ?? new Set<string>();
+      set.add(id);
+      map.set(key, set);
+    };
+    for (const match of existingMatches) {
+      add(match.round_id, match.home_team_id);
+      add(match.round_id, match.away_team_id);
+    }
+    for (const match of preview) {
+      add(match.round_id, match.home_team_id);
+      add(match.round_id, match.away_team_id);
+    }
+    return map;
+  }, [existingMatches, preview]);
+
+  function teamsAvailableForRound(
+    roundId: string,
+    opts?: { excludePreviewKey?: string; alsoAllow?: string[] },
+  ): SoccerTeam[] {
+    const used = new Set(usedTeamsByRound.get(roundKey(roundId)) ?? []);
+    if (opts?.excludePreviewKey) {
+      const row = preview.find((r) => r.key === opts.excludePreviewKey);
+      if (row) {
+        used.delete(row.home_team_id);
+        used.delete(row.away_team_id);
+      }
+    }
+    for (const id of opts?.alsoAllow ?? []) {
+      if (id) used.delete(id);
+    }
+    return participantTeams.filter((team) => !used.has(team.id));
+  }
+
+  const formTeamOptions = useMemo(
+    () => teamsAvailableForRound(form.round_id),
+    // teamsAvailableForRound closes over preview/used maps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [form.round_id, usedTeamsByRound, participantTeams, preview],
+  );
+
   const saveMutation = useMutation({
     mutationFn: async (rows: DraftMatch[]) => {
       if (rows.length === 0) {
         throw new Error("Agrega al menos un partido antes de guardar.");
       }
+      const seenInRound = new Map<string, Set<string>>();
       for (const row of rows) {
         if (!row.home_team_id?.trim() || !row.away_team_id?.trim()) {
           throw new Error(
@@ -115,6 +192,38 @@ export function AddMatchesModal({
         if (row.home_team_id === row.away_team_id) {
           throw new Error("Local y visitante deben ser equipos distintos.");
         }
+        const key = roundKey(row.round_id);
+        const used = seenInRound.get(key) ?? new Set<string>();
+        for (const teamId of [row.home_team_id, row.away_team_id]) {
+          if (used.has(teamId)) {
+            const roundLabel =
+              roundsById.get(row.round_id)?.name ||
+              row.round_name ||
+              "esta jornada";
+            throw new Error(
+              `Un equipo no puede jugar dos partidos en ${roundLabel}.`,
+            );
+          }
+          used.add(teamId);
+        }
+        for (const existing of existingMatches) {
+          if (roundKey(existing.round_id) !== key) continue;
+          if (
+            existing.home_team_id === row.home_team_id ||
+            existing.home_team_id === row.away_team_id ||
+            existing.away_team_id === row.home_team_id ||
+            existing.away_team_id === row.away_team_id
+          ) {
+            const roundLabel =
+              roundsById.get(row.round_id)?.name ||
+              row.round_name ||
+              "esta jornada";
+            throw new Error(
+              `Un equipo ya tiene partido en ${roundLabel}. Elige otro.`,
+            );
+          }
+        }
+        seenInRound.set(key, used);
       }
       const saved = await saveMatchesBatch(
         seasonId,
@@ -178,7 +287,20 @@ export function AddMatchesModal({
     };
   }, [open, saveMutation.isPending, onClose]);
   function updateForm(patch: Partial<FormState>) {
-    setForm((prev) => ({ ...prev, ...patch }));
+    setForm((prev) => {
+      let next = { ...prev, ...patch };
+      if (patch.round_id !== undefined && patch.round_id !== prev.round_id) {
+        const used = usedTeamsByRound.get(roundKey(patch.round_id)) ?? new Set();
+        if (next.home_team_id && used.has(next.home_team_id)) {
+          next.home_team_id = "";
+        }
+        if (next.away_team_id && used.has(next.away_team_id)) {
+          next.away_team_id = "";
+        }
+      }
+      next = withAutoFinishedStatus(next);
+      return next;
+    });
     setFormError(null);
   }
 
@@ -186,7 +308,7 @@ export function AddMatchesModal({
     setPreview((prev) =>
       prev.map((row) => {
         if (row.key !== key) return row;
-        const next = { ...row, ...patch };
+        let next = { ...row, ...patch };
         if (patch.round_id !== undefined) {
           const round = roundsById.get(patch.round_id);
           next.round_name = round?.name ?? "";
@@ -199,6 +321,7 @@ export function AddMatchesModal({
           const away = teamsById.get(patch.away_team_id);
           next.away_label = away ? teamDisplayName(away) : patch.away_team_id;
         }
+        next = withAutoFinishedStatus(next);
         return next;
       }),
     );
@@ -217,31 +340,40 @@ export function AddMatchesModal({
       setFormError("Local y visitante deben ser equipos distintos.");
       return;
     }
+    const usedInRound =
+      usedTeamsByRound.get(roundKey(form.round_id)) ?? new Set<string>();
+    if (
+      usedInRound.has(form.home_team_id) ||
+      usedInRound.has(form.away_team_id)
+    ) {
+      setFormError(
+        "Ese equipo ya tiene un partido en esta jornada. Elige otro.",
+      );
+      return;
+    }
     const round = roundsById.get(form.round_id);
     const home = teamsById.get(form.home_team_id);
     const away = teamsById.get(form.away_team_id);
-    setPreview((prev) => [
-      ...prev,
-      {
-        key: `draft-${Date.now()}-${prev.length}`,
-        home_team_id: form.home_team_id,
-        away_team_id: form.away_team_id,
-        home_label: home ? teamDisplayName(home) : form.home_team_id,
-        away_label: away ? teamDisplayName(away) : form.away_team_id,
-        date: form.date,
-        time: form.time,
-        status: form.status,
-        goals_home: form.goals_home,
-        goals_away: form.goals_away,
-        round_id: form.round_id,
-        round_name: round?.name ?? "",
-      },
-    ]);
+    const draft = withAutoFinishedStatus({
+      key: `draft-${Date.now()}-${preview.length}`,
+      home_team_id: form.home_team_id,
+      away_team_id: form.away_team_id,
+      home_label: home ? teamDisplayName(home) : form.home_team_id,
+      away_label: away ? teamDisplayName(away) : form.away_team_id,
+      date: form.date,
+      time: form.time,
+      status: form.status,
+      goals_home: form.goals_home,
+      goals_away: form.goals_away,
+      round_id: form.round_id,
+      round_name: round?.name ?? "",
+    });
+    setPreview((prev) => [...prev, draft]);
     setForm((prev) => ({
       ...emptyForm(prev.round_id || resolvedDefaultRound),
-      // Keep jornada / status for faster consecutive entry
+      // Keep jornada/date for faster consecutive entry; status resets
+      // to Programado until the next marcador completo.
       round_id: prev.round_id || resolvedDefaultRound,
-      status: prev.status,
       date: prev.date,
     }));
     setFormError(null);
@@ -277,7 +409,9 @@ export function AddMatchesModal({
             Agregar partidos
           </h2>
           <p className="mt-1 text-[13px] text-dx-muted">
-            Completa los datos, agrégalos a la lista y guarda el lote en la API.
+            Completa los datos, agrégalos a la lista y guarda el lote. Con
+            marcador de ambos equipos el estado pasa a Finalizado. Un equipo no
+            puede jugar dos partidos en la misma jornada.
           </p>
         </div>
 
@@ -333,11 +467,13 @@ export function AddMatchesModal({
                 onChange={(e) => updateForm({ home_team_id: e.target.value })}
               >
                 <option value="">Selecciona local…</option>
-                {participantTeams.map((team) => (
-                  <option key={`form-h-${team.id}`} value={team.id}>
-                    {teamDisplayName(team)}
-                  </option>
-                ))}
+                {formTeamOptions
+                  .filter((team) => team.id !== form.away_team_id)
+                  .map((team) => (
+                    <option key={`form-h-${team.id}`} value={team.id}>
+                      {teamDisplayName(team)}
+                    </option>
+                  ))}
               </TextSelect>
             </Field>
             <Field label="Goles local">
@@ -360,11 +496,13 @@ export function AddMatchesModal({
                 onChange={(e) => updateForm({ away_team_id: e.target.value })}
               >
                 <option value="">Selecciona visitante…</option>
-                {participantTeams.map((team) => (
-                  <option key={`form-a-${team.id}`} value={team.id}>
-                    {teamDisplayName(team)}
-                  </option>
-                ))}
+                {formTeamOptions
+                  .filter((team) => team.id !== form.home_team_id)
+                  .map((team) => (
+                    <option key={`form-a-${team.id}`} value={team.id}>
+                      {teamDisplayName(team)}
+                    </option>
+                  ))}
               </TextSelect>
             </Field>
           </div>
@@ -443,6 +581,10 @@ export function AddMatchesModal({
                     preview.map((row) => {
                       const home = teamsById.get(row.home_team_id);
                       const away = teamsById.get(row.away_team_id);
+                      const rowTeamOptions = teamsAvailableForRound(
+                        row.round_id,
+                        { excludePreviewKey: row.key },
+                      );
                       return (
                         <tr key={row.key} className="hover:bg-[#fbfdff]">
                           <td className="border-b border-dx-line px-2 py-1.5 min-w-[140px]">
@@ -503,14 +645,16 @@ export function AddMatchesModal({
                                 })
                               }
                             >
-                              {participantTeams.map((team) => (
-                                <option
-                                  key={`h-${row.key}-${team.id}`}
-                                  value={team.id}
-                                >
-                                  {teamDisplayName(team)}
-                                </option>
-                              ))}
+                              {rowTeamOptions
+                                .filter((team) => team.id !== row.away_team_id)
+                                .map((team) => (
+                                  <option
+                                    key={`h-${row.key}-${team.id}`}
+                                    value={team.id}
+                                  >
+                                    {teamDisplayName(team)}
+                                  </option>
+                                ))}
                             </select>
                           </td>
                           <td className="border-b border-dx-line px-2 py-1.5">
@@ -547,14 +691,16 @@ export function AddMatchesModal({
                                 })
                               }
                             >
-                              {participantTeams.map((team) => (
-                                <option
-                                  key={`a-${row.key}-${team.id}`}
-                                  value={team.id}
-                                >
-                                  {teamDisplayName(team)}
-                                </option>
-                              ))}
+                              {rowTeamOptions
+                                .filter((team) => team.id !== row.home_team_id)
+                                .map((team) => (
+                                  <option
+                                    key={`a-${row.key}-${team.id}`}
+                                    value={team.id}
+                                  >
+                                    {teamDisplayName(team)}
+                                  </option>
+                                ))}
                             </select>
                           </td>
                           <td className="border-b border-dx-line px-2 py-1.5">

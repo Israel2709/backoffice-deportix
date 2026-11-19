@@ -348,20 +348,21 @@ function flattenStandings(
   seasonId: string,
   leagueId: string,
 ): SoccerStanding[] {
-  const rows: SoccerStanding[] = [];
+  const byTeam = new Map<string, SoccerStanding>();
   for (const entry of entries) {
     const groups = entry.league?.standings ?? [];
     for (const group of groups) {
       for (const row of group) {
         const teamId = row.team?.id != null ? String(row.team.id) : "";
+        if (!teamId) continue;
         const played = row.all?.played ?? 0;
         const wins = row.all?.win ?? 0;
         const draws = row.all?.draw ?? 0;
         const losses = row.all?.lose ?? 0;
         const goalsFor = row.all?.goals?.for ?? 0;
         const goalsAgainst = row.all?.goals?.against ?? 0;
-        rows.push({
-          // BFF list does not expose Firestore standing doc ids.
+        // Last row wins when the API still returns historical duplicates.
+        byTeam.set(teamId, {
           id: `${seasonId}:${teamId}`,
           team_id: teamId,
           team_name: row.team?.name?.trim() || null,
@@ -372,7 +373,8 @@ function flattenStandings(
           played: played ?? 0,
           goals_for: goalsFor ?? 0,
           goals_against: goalsAgainst ?? 0,
-          goal_difference: row.goalsDiff ?? (goalsFor ?? 0) - (goalsAgainst ?? 0),
+          goal_difference:
+            row.goalsDiff ?? (goalsFor ?? 0) - (goalsAgainst ?? 0),
           points: row.points ?? 0,
           wins: wins ?? 0,
           draws: draws ?? 0,
@@ -381,7 +383,12 @@ function flattenStandings(
       }
     }
   }
-  return rows;
+  return [...byTeam.values()].sort(
+    (a, b) =>
+      (a.rank ?? 9999) - (b.rank ?? 9999) ||
+      b.points - a.points ||
+      a.team_id.localeCompare(b.team_id),
+  );
 }
 
 /** When BFF league.id is null (manual create without external_id), resolve via v1. */
@@ -1201,7 +1208,8 @@ function mapV1Participant(row: V1Participant, seasonId: string, leagueId: string
 
 /**
  * Season roster from `GET /v1/leagues/{leagueId}/seasons/{year}/participants`.
- * Falls back to `teams?league=&season=` while participants are still empty.
+ * Empty when none were saved — do not invent the full league catalog (that
+ * leaked into Partidos before participantes existed).
  */
 export async function listParticipants(seasonId: string): List<SoccerParticipant> {
   const { leagueId, year } = parseSeasonId(seasonId);
@@ -1209,25 +1217,12 @@ export async function listParticipants(seasonId: string): List<SoccerParticipant
     const rows = await v1Request<V1Participant[] | V1Participant>(
       `v1/leagues/${encodeURIComponent(leagueId)}/seasons/${year}/participants`,
     );
-    const list = asList(rows);
-    if (list.length > 0) {
-      return {
-        data: list.map((row) => mapV1Participant(row, seasonId, leagueId)),
-      };
-    }
+    return {
+      data: asList(rows).map((row) => mapV1Participant(row, seasonId, leagueId)),
+    };
   } catch {
-    /* fall through to BFF teams while API/deploy catches up */
+    return { data: [] };
   }
-
-  const teams = await listAdminTeams(leagueId, year);
-  return {
-    data: teams.data.map((team) => ({
-      id: `${seasonId}:${team.id}`,
-      season_id: seasonId,
-      league_id: leagueId,
-      team_id: team.id,
-    })),
-  };
 }
 
 /** Replace the full participant set for a competition season. */

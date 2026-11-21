@@ -77,10 +77,14 @@ export function computeStandingsFromMatches(input: {
   }
 
   const totalsByTeam = new Map<string, TeamTotals>();
+  const rosterLocked = input.teamIds.length > 0;
+
   const bump = (rawId: string, goalsFor: number, goalsAgainst: number) => {
     const id = resolve(rawId);
     if (!id) return;
-    seedIds.add(id);
+    // When a season roster exists, ignore unresolved provider ids (EQ 2295 ghosts).
+    if (rosterLocked && !seedIds.has(id)) return;
+    if (!rosterLocked) seedIds.add(id);
     const current = totalsByTeam.get(id) ?? emptyTotals();
     current.played += 1;
     current.goals_for += goalsFor;

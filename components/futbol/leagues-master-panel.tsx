@@ -1,18 +1,22 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { FilteredSelect } from "@/components/capture/filtered-select";
 import { Field } from "@/components/capture/field";
 import { EditableDataTable } from "@/components/data/editable-data-table";
+import { CreateLeagueModal } from "@/components/futbol/create-league-modal";
+import { Button } from "@/components/ui/button";
+import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { Hero } from "@/components/ui/hero";
 import { Note } from "@/components/ui/note";
 import { PageHeader } from "@/components/ui/page";
 import { LoadingBlock } from "@/components/ui/spinner";
 import { listLeagueTypes } from "@/lib/api/admin-catalogs";
 import {
+  deleteLeague,
   listAdminCountries,
   listAdminOrganizations,
   listLeaguesForCountry,
@@ -41,6 +45,12 @@ export function LeaguesMasterPanel() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<{
+    id: string;
+    label: string;
+  } | null>(null);
 
   const selectedParam = searchParams.get(COUNTRY_PARAM)?.trim() ?? "";
 
@@ -259,6 +269,28 @@ export function LeaguesMasterPanel() {
     onError: (error: Error) => toast.error(error.message),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      setDeletingId(id);
+      await deleteLeague(id);
+    },
+    onSuccess: () => {
+      toast.success("Liga eliminada");
+      setPendingDelete(null);
+      void queryClient.invalidateQueries({
+        queryKey: ["admin", "soccer", "leagues"],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["admin", "soccer", "nav-leagues"],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["admin", "soccer", "nav-orgs"],
+      });
+    },
+    onError: (error: Error) => toast.error(error.message),
+    onSettled: () => setDeletingId(null),
+  });
+
   const crumbItems = [
     { label: "Datos Maestros", href: "/datos-maestros" },
     { label: "Fútbol", href: "/datos-maestros/futbol" },
@@ -273,6 +305,11 @@ export function LeaguesMasterPanel() {
           eyebrow="Datos Maestros · Fútbol"
           title="Ligas / torneos"
           description="Selecciona un país para ver y editar sus ligas o torneos."
+          actions={
+            country ? (
+              <Button onClick={() => setCreateOpen(true)}>+ Nueva liga</Button>
+            ) : null
+          }
         />
       </PageHeader>
 
@@ -314,8 +351,11 @@ export function LeaguesMasterPanel() {
             No hay ligas en {country.name}
           </p>
           <p className="mt-2 text-[14px] text-dx-muted">
-            Crea competiciones en Estructura deportiva o asígnales este país.
+            Crea la primera liga o torneo para este país.
           </p>
+          <Button className="mt-5" onClick={() => setCreateOpen(true)}>
+            + Nueva liga
+          </Button>
         </div>
       ) : (
         <EditableDataTable
@@ -323,15 +363,51 @@ export function LeaguesMasterPanel() {
           rows={rows}
           getValues={getValues}
           saving={saveMutation.isPending}
+          deletingId={deletingId}
           onSave={(changes) => saveMutation.mutateAsync(changes)}
+          onDelete={(id) => {
+            const league = rows.find((item) => item.id === id);
+            setPendingDelete({
+              id,
+              label: league?.name ?? "esta liga",
+            });
+          }}
           emptyLabel="No hay ligas."
           filterPlaceholder="Filtrar ligas…"
         />
       )}
 
+      <ConfirmModal
+        open={Boolean(pendingDelete)}
+        title="Eliminar liga"
+        description={
+          pendingDelete
+            ? `¿Eliminar «${pendingDelete.label}»? Se borrará de la base de datos y no se puede deshacer.`
+            : undefined
+        }
+        confirmLabel="Eliminar"
+        confirmingLabel="Eliminando…"
+        confirming={deleteMutation.isPending}
+        onCancel={() => {
+          if (!deleteMutation.isPending) setPendingDelete(null);
+        }}
+        onConfirm={() => {
+          if (pendingDelete) deleteMutation.mutate(pendingDelete.id);
+        }}
+      />
+
+      {country ? (
+        <CreateLeagueModal
+          open={createOpen}
+          onClose={() => setCreateOpen(false)}
+          countryName={country.name}
+          countryCode={country.code}
+        />
+      ) : null}
+
       <Note className="mt-5">
         {country
-          ? `Editando ligas de ${country.name}${country.code ? ` (${country.code})` : ""}. Puedes asignar cualquier organización registrada; el país de la liga se alinea con el de la organización.`
+          ? `Editando ligas de ${country.name}${country.code ? ` (${country.code})` : ""}. Puedes crear, editar o eliminar ligas; al asignar organización el país se alinea con el de esa organización.`
           : "Primero selecciona un país para cargar la tabla."}
       </Note>
     </>

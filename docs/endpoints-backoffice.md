@@ -381,7 +381,7 @@ Recibe `{ team_ids: string[] }`.
 
 #### `GET /teams?league={leagueId}&season={year}`
 
-Plantilla de la temporada en una sola llamada. Usado en Partidos y Tabla para resolver nombres/logos (antes N× `GET /v1/teams/{id}`). Los ids que falten se resuelven con `GET /v1/teams/{id}`.
+Plantilla de la temporada en una sola llamada. Usado en Partidos y Tabla para resolver nombres/logos (antes N× `GET /v1/teams/{id}`). Los ids que falten se resuelven con `GET /v1/teams/{id}`. El BO trata `team.id` como id Firestore y usa `external_id` (o el id del logo API-Sports) para cruzar fixtures importados.
 
 #### `GET /fixtures/rounds?league={leagueId}&season={year}`
 
@@ -395,7 +395,7 @@ Recibe `{ name, position }`.
 
 #### `GET /fixtures?league={leagueId}&season={year}`
 
-Lista los partidos de la temporada.
+Lista los partidos de la temporada. En cada lado, `teams.home|away.id` es el id Firestore del equipo cuando existe; el id de proveedor queda en `external_id`.
 
 #### `POST /fixtures`
 

@@ -92,6 +92,8 @@ type BffTeamEntry = {
     country?: string | null;
     logo?: string | null;
   };
+  /** Provider / API-Sports id when the BFF keeps Firestore id on team.id. */
+  external_id?: number | string | null;
   venue?: Record<string, unknown>;
   league?: {
     id?: number | string | null;
@@ -102,6 +104,15 @@ type BffTeamEntry = {
     name?: string | null;
     logo?: string | null;
   } | null;
+};
+
+type BffFixtureTeamSide = {
+  id?: number | string | null;
+  /** Firestore team id when `id` remains the provider external id. */
+  firestore_id?: string | null;
+  external_id?: number | string | null;
+  name?: string | null;
+  logo?: string | null;
 };
 
 type BffFixture = {
@@ -116,11 +127,20 @@ type BffFixture = {
     round?: string | null;
   };
   teams?: {
-    home?: { id?: number | string | null; name?: string | null; logo?: string | null };
-    away?: { id?: number | string | null; name?: string | null; logo?: string | null };
+    home?: BffFixtureTeamSide;
+    away?: BffFixtureTeamSide;
   };
   goals?: { home?: number | null; away?: number | null };
 };
+
+function fixtureTeamId(side: BffFixtureTeamSide | undefined): string {
+  if (!side) return "";
+  // Prefer Firestore id when the BFF still leaves a provider numeric on `id`.
+  const firestore = side.firestore_id?.trim();
+  if (firestore) return firestore;
+  if (side.id != null && String(side.id).trim() !== "") return String(side.id);
+  return "";
+}
 
 type BffStandingRow = {
   rank?: number | null;
@@ -242,19 +262,34 @@ export type SoccerTeamWithLeague = SoccerTeam & {
   organization_name: string | null;
 };
 
+/** Fallback when BFF omits external_id but logo is still the API-Sports CDN path. */
+function providerIdFromTeamLogo(logo: string | null | undefined): string | null {
+  if (!logo) return null;
+  const match = /\/(?:football\/)?teams\/(\d+)\./i.exec(logo);
+  return match?.[1] ?? null;
+}
+
 function mapTeam(entry: BffTeamEntry, leagueId?: string): SoccerTeam {
   const id = String(entry.team.id);
   const fromLeague =
     entry.league?.id != null && String(entry.league.id).trim() !== ""
       ? String(entry.league.id)
       : "";
+  // Dual key: SoccerTeam.id = Firestore; team.team.id = provider id when known
+  // so standings/matches can resolve EQ 2287 → América.
+  const external =
+    (entry.external_id != null && String(entry.external_id).trim() !== ""
+      ? String(entry.external_id)
+      : null) ??
+    providerIdFromTeamLogo(entry.team.logo) ??
+    String(entry.team.id);
   return {
     id,
     league_id: leagueId || fromLeague,
     name_short: entry.team.code ?? null,
     status: "active",
     team: {
-      id: entry.team.id,
+      id: external,
       name: entry.team.name,
       code: entry.team.code ?? null,
       country: entry.team.country ?? null,
@@ -320,8 +355,8 @@ function mapFixture(raw: BffFixture, seasonId: string, leagueId: string): Soccer
     id,
     league_id: leagueId,
     season_id: seasonId,
-    home_team_id: raw.teams?.home?.id != null ? String(raw.teams.home.id) : "",
-    away_team_id: raw.teams?.away?.id != null ? String(raw.teams.away.id) : "",
+    home_team_id: fixtureTeamId(raw.teams?.home),
+    away_team_id: fixtureTeamId(raw.teams?.away),
     fixture_date: raw.fixture?.date ?? "",
     status: short,
     bo_status: toBoStatus(short),

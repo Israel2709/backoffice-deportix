@@ -637,11 +637,6 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
         participantTeams={participantTeams}
         teamsById={teamsById}
         defaultRoundId={roundFilter === "all" ? "" : roundFilter}
-        existingMatches={rows.map((row) => ({
-          round_id: row.round_id,
-          home_team_id: row.home_team_id,
-          away_team_id: row.away_team_id,
-        }))}
       />
     </div>
   );

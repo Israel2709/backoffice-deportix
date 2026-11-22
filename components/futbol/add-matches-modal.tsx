@@ -83,16 +83,6 @@ function withAutoFinishedStatus<
   return { ...row, status: "finished" };
 }
 
-type ExistingMatchRef = {
-  round_id: string;
-  home_team_id: string;
-  away_team_id: string;
-};
-
-function roundKey(roundId: string | null | undefined): string {
-  return (roundId ?? "").trim();
-}
-
 export function AddMatchesModal({
   open,
   onClose,
@@ -101,7 +91,6 @@ export function AddMatchesModal({
   participantTeams,
   teamsById,
   defaultRoundId = "",
-  existingMatches = [],
 }: {
   open: boolean;
   onClose: () => void;
@@ -110,8 +99,6 @@ export function AddMatchesModal({
   participantTeams: SoccerTeam[];
   teamsById: Map<string, SoccerTeam>;
   defaultRoundId?: string;
-  /** Matches already in the season table (excluded from selectors per jornada). */
-  existingMatches?: ExistingMatchRef[];
 }) {
   const titleId = useId();
   const queryClient = useQueryClient();
@@ -130,59 +117,11 @@ export function AddMatchesModal({
     return map;
   }, [rounds]);
 
-  /** Team ids already playing in a jornada (saved matches + preview). */
-  const usedTeamsByRound = useMemo(() => {
-    const map = new Map<string, Set<string>>();
-    const add = (roundId: string, teamId: string) => {
-      const id = teamId.trim();
-      if (!id) return;
-      const key = roundKey(roundId);
-      const set = map.get(key) ?? new Set<string>();
-      set.add(id);
-      map.set(key, set);
-    };
-    for (const match of existingMatches) {
-      add(match.round_id, match.home_team_id);
-      add(match.round_id, match.away_team_id);
-    }
-    for (const match of preview) {
-      add(match.round_id, match.home_team_id);
-      add(match.round_id, match.away_team_id);
-    }
-    return map;
-  }, [existingMatches, preview]);
-
-  function teamsAvailableForRound(
-    roundId: string,
-    opts?: { excludePreviewKey?: string; alsoAllow?: string[] },
-  ): SoccerTeam[] {
-    const used = new Set(usedTeamsByRound.get(roundKey(roundId)) ?? []);
-    if (opts?.excludePreviewKey) {
-      const row = preview.find((r) => r.key === opts.excludePreviewKey);
-      if (row) {
-        used.delete(row.home_team_id);
-        used.delete(row.away_team_id);
-      }
-    }
-    for (const id of opts?.alsoAllow ?? []) {
-      if (id) used.delete(id);
-    }
-    return participantTeams.filter((team) => !used.has(team.id));
-  }
-
-  const formTeamOptions = useMemo(
-    () => teamsAvailableForRound(form.round_id),
-    // teamsAvailableForRound closes over preview/used maps
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [form.round_id, usedTeamsByRound, participantTeams, preview],
-  );
-
   const saveMutation = useMutation({
     mutationFn: async (rows: DraftMatch[]) => {
       if (rows.length === 0) {
         throw new Error("Agrega al menos un partido antes de guardar.");
       }
-      const seenInRound = new Map<string, Set<string>>();
       for (const row of rows) {
         if (!row.home_team_id?.trim() || !row.away_team_id?.trim()) {
           throw new Error(
@@ -192,38 +131,6 @@ export function AddMatchesModal({
         if (row.home_team_id === row.away_team_id) {
           throw new Error("Local y visitante deben ser equipos distintos.");
         }
-        const key = roundKey(row.round_id);
-        const used = seenInRound.get(key) ?? new Set<string>();
-        for (const teamId of [row.home_team_id, row.away_team_id]) {
-          if (used.has(teamId)) {
-            const roundLabel =
-              roundsById.get(row.round_id)?.name ||
-              row.round_name ||
-              "esta jornada";
-            throw new Error(
-              `Un equipo no puede jugar dos partidos en ${roundLabel}.`,
-            );
-          }
-          used.add(teamId);
-        }
-        for (const existing of existingMatches) {
-          if (roundKey(existing.round_id) !== key) continue;
-          if (
-            existing.home_team_id === row.home_team_id ||
-            existing.home_team_id === row.away_team_id ||
-            existing.away_team_id === row.home_team_id ||
-            existing.away_team_id === row.away_team_id
-          ) {
-            const roundLabel =
-              roundsById.get(row.round_id)?.name ||
-              row.round_name ||
-              "esta jornada";
-            throw new Error(
-              `Un equipo ya tiene partido en ${roundLabel}. Elige otro.`,
-            );
-          }
-        }
-        seenInRound.set(key, used);
       }
       const saved = await saveMatchesBatch(
         seasonId,
@@ -287,20 +194,7 @@ export function AddMatchesModal({
     };
   }, [open, saveMutation.isPending, onClose]);
   function updateForm(patch: Partial<FormState>) {
-    setForm((prev) => {
-      let next = { ...prev, ...patch };
-      if (patch.round_id !== undefined && patch.round_id !== prev.round_id) {
-        const used = usedTeamsByRound.get(roundKey(patch.round_id)) ?? new Set();
-        if (next.home_team_id && used.has(next.home_team_id)) {
-          next.home_team_id = "";
-        }
-        if (next.away_team_id && used.has(next.away_team_id)) {
-          next.away_team_id = "";
-        }
-      }
-      next = withAutoFinishedStatus(next);
-      return next;
-    });
+    setForm((prev) => withAutoFinishedStatus({ ...prev, ...patch }));
     setFormError(null);
   }
 
@@ -338,17 +232,6 @@ export function AddMatchesModal({
     }
     if (form.home_team_id === form.away_team_id) {
       setFormError("Local y visitante deben ser equipos distintos.");
-      return;
-    }
-    const usedInRound =
-      usedTeamsByRound.get(roundKey(form.round_id)) ?? new Set<string>();
-    if (
-      usedInRound.has(form.home_team_id) ||
-      usedInRound.has(form.away_team_id)
-    ) {
-      setFormError(
-        "Ese equipo ya tiene un partido en esta jornada. Elige otro.",
-      );
       return;
     }
     const round = roundsById.get(form.round_id);
@@ -410,8 +293,7 @@ export function AddMatchesModal({
           </h2>
           <p className="mt-1 text-[13px] text-dx-muted">
             Completa los datos, agrégalos a la lista y guarda el lote. Con
-            marcador de ambos equipos el estado pasa a Finalizado. Un equipo no
-            puede jugar dos partidos en la misma jornada.
+            marcador de ambos equipos el estado pasa a Finalizado.
           </p>
         </div>
 
@@ -467,7 +349,7 @@ export function AddMatchesModal({
                 onChange={(e) => updateForm({ home_team_id: e.target.value })}
               >
                 <option value="">Selecciona local…</option>
-                {formTeamOptions
+                {participantTeams
                   .filter((team) => team.id !== form.away_team_id)
                   .map((team) => (
                     <option key={`form-h-${team.id}`} value={team.id}>
@@ -496,7 +378,7 @@ export function AddMatchesModal({
                 onChange={(e) => updateForm({ away_team_id: e.target.value })}
               >
                 <option value="">Selecciona visitante…</option>
-                {formTeamOptions
+                {participantTeams
                   .filter((team) => team.id !== form.home_team_id)
                   .map((team) => (
                     <option key={`form-a-${team.id}`} value={team.id}>
@@ -581,10 +463,6 @@ export function AddMatchesModal({
                     preview.map((row) => {
                       const home = teamsById.get(row.home_team_id);
                       const away = teamsById.get(row.away_team_id);
-                      const rowTeamOptions = teamsAvailableForRound(
-                        row.round_id,
-                        { excludePreviewKey: row.key },
-                      );
                       return (
                         <tr key={row.key} className="hover:bg-[#fbfdff]">
                           <td className="border-b border-dx-line px-2 py-1.5 min-w-[140px]">
@@ -645,7 +523,7 @@ export function AddMatchesModal({
                                 })
                               }
                             >
-                              {rowTeamOptions
+                              {participantTeams
                                 .filter((team) => team.id !== row.away_team_id)
                                 .map((team) => (
                                   <option
@@ -691,7 +569,7 @@ export function AddMatchesModal({
                                 })
                               }
                             >
-                              {rowTeamOptions
+                              {participantTeams
                                 .filter((team) => team.id !== row.home_team_id)
                                 .map((team) => (
                                   <option

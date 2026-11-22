@@ -497,7 +497,7 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
                   </td>                  <td className="border-b border-dx-line px-2 py-1.5">
                     <input
                       type="time"
-                      className={cn(inputClass, "w-[82px]")}
+                      className={cn(inputClass, "w-[120px]")}
                       value={row.time}
                       tabIndex={1}
                       onChange={(e) =>

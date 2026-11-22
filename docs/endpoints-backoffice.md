@@ -414,7 +414,7 @@ Recibe:
 
 #### `PATCH /fixtures/{id}`
 
-Actualiza un partido. Mismo cuerpo que el alta.
+Actualiza un partido. Mismo cuerpo que el alta. El BO solo envía PATCH de filas editadas. El status se persiste en `status` y en `fixture.status.short` (los partidos importados leen el anidado).
 
 #### `GET /standings?league={leagueId}&season={year}`
 

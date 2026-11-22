@@ -75,10 +75,27 @@ function resolveTeamId(
 const inputClass =
   "w-full min-w-0 rounded-[7px] border border-[#d9e0ea] bg-white px-2 py-1.5 text-[13px] text-[#243147]";
 
+/** Only fields the PATCH/POST actually persist — ignore display-only drift. */
+function matchPersistSignature(row: MatchRow): string {
+  return JSON.stringify({
+    id: row.id ?? "",
+    home_team_id: row.home_team_id,
+    away_team_id: row.away_team_id,
+    date: row.date,
+    time: row.time,
+    status: row.status,
+    goals_home: row.goals_home,
+    goals_away: row.goals_away,
+    round_id: row.round_id,
+    round_name: row.round_name,
+  });
+}
+
 export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
   const queryClient = useQueryClient();
   const [rows, setRows] = useState<MatchRow[]>([]);
   const [baseline, setBaseline] = useState("[]");
+  const [dirtyKeys, setDirtyKeys] = useState<Set<string>>(() => new Set());
   const [roundFilter, setRoundFilter] = useState<string>("all");
   const [addOpen, setAddOpen] = useState(false);
   const [sort, setSort] = useState<SortState>(null);
@@ -173,9 +190,27 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
     });
     setRows(next);
     setBaseline(JSON.stringify(next));
+    setDirtyKeys(new Set());
   }, [matchesQuery.data, roundsQuery.data, teamsById, byExternal]);
 
-  const dirty = JSON.stringify(rows) !== baseline;
+  const dirty = useMemo(() => {
+    if (dirtyKeys.size === 0) return false;
+    const baselineRows = (() => {
+      try {
+        return JSON.parse(baseline) as MatchRow[];
+      } catch {
+        return [] as MatchRow[];
+      }
+    })();
+    const baselineByKey = new Map(baselineRows.map((row) => [row.key, row]));
+    return rows.some((row) => {
+      if (!row.id) return true;
+      if (!dirtyKeys.has(row.key)) return false;
+      const original = baselineByKey.get(row.key);
+      if (!original) return true;
+      return matchPersistSignature(row) !== matchPersistSignature(original);
+    });
+  }, [rows, baseline, dirtyKeys]);
   useDirtyGuard(dirty);
 
   const roundsById = useMemo(() => {
@@ -272,11 +307,20 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
       const baselineRows = JSON.parse(baseline) as MatchRow[];
       const baselineByKey = new Map(baselineRows.map((row) => [row.key, row]));
       const toPersist = rows.filter((row) => {
+        // New rows (no id yet) always persist.
         if (!row.id) return true;
-        const original = baselineByKey.get(row.key);
-        if (!original) return true;
-        return JSON.stringify(row) !== JSON.stringify(original);
+        // Prefer explicit edit tracking; fall back to persist-field diff.
+        if (dirtyKeys.has(row.key)) {
+          const original = baselineByKey.get(row.key);
+          if (!original) return true;
+          return matchPersistSignature(row) !== matchPersistSignature(original);
+        }
+        return false;
       });
+
+      if (toPersist.length === 0) {
+        return { data: matchesQuery.data?.data ?? [] };
+      }
 
       for (const row of toPersist) {
         if (!row.home_team_id?.trim() || !row.away_team_id?.trim()) {
@@ -314,6 +358,7 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
     onSuccess: () => {
       toast.success("Partidos guardados");
       setBaseline(JSON.stringify(rows));
+      setDirtyKeys(new Set());
       void queryClient.invalidateQueries({
         queryKey: ["admin", "soccer", "matches", seasonId],
       });
@@ -325,6 +370,12 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
   });
 
   function updateRow(key: string, patch: Partial<MatchRow>) {
+    setDirtyKeys((prev) => {
+      if (prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
     setRows((prev) =>
       prev.map((row) => {
         if (row.key !== key) return row;
@@ -571,7 +622,10 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
         dirty={dirty}
         saving={saveMutation.isPending}
         saveLabel="Guardar jornada"
-        onDiscard={() => setRows(JSON.parse(baseline) as MatchRow[])}
+        onDiscard={() => {
+          setRows(JSON.parse(baseline) as MatchRow[]);
+          setDirtyKeys(new Set());
+        }}
         onSave={() => saveMutation.mutate()}
       />
 

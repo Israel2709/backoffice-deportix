@@ -1443,6 +1443,22 @@ export async function saveMatchesBatch(
   return listSeasonMatches(seasonId);
 }
 
+export async function deleteMatch(
+  seasonId: string,
+  matchId: string,
+): Promise<void> {
+  const { leagueId } = parseSeasonId(seasonId);
+  const id = matchId.trim();
+  if (!id) throw new Error("Falta el id del partido.");
+  if (!leagueId.trim()) {
+    throw new Error("No se pudo resolver la liga de la temporada.");
+  }
+  await bffRequest(
+    `fixtures/${encodeURIComponent(id)}?league=${encodeURIComponent(leagueId)}`,
+    { method: "DELETE" },
+  );
+}
+
 // ─── Standings ────────────────────────────────────────────────────────────────
 
 export async function listStandings(seasonId: string): List<SoccerStanding> {

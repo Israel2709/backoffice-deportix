@@ -416,6 +416,10 @@ Recibe:
 
 Actualiza un partido. Mismo cuerpo que el alta. El BO solo envía PATCH de filas editadas. El status se persiste en `status` y en `fixture.status.short` (los partidos importados leen el anidado).
 
+#### `DELETE /fixtures/{id}?league={leagueId}`
+
+Elimina un partido. Usado desde la tabla de Partidos (acción por fila).
+
 #### `GET /standings?league={leagueId}&season={year}`
 
 Lista la clasificación. Responde `Cache-Control: no-store`. El BO también deduplica por equipo.

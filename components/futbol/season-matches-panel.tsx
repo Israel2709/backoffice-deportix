@@ -2,10 +2,11 @@
 import { LoadingBlock } from "@/components/ui/spinner";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
+  deleteMatch,
   listParticipants,
   listRounds,
   listSeasonMatches,
@@ -22,6 +23,7 @@ import {
 } from "@/lib/api/soccer-types";
 import { useDirtyGuard } from "@/hooks/use-dirty-guard";
 import { Button } from "@/components/ui/button";
+import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { Note } from "@/components/ui/note";
 import { StickyActions } from "@/components/capture/sticky-actions";
 import { TextSelect } from "@/components/capture/field";
@@ -99,6 +101,11 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
   const [roundFilter, setRoundFilter] = useState<string>("all");
   const [addOpen, setAddOpen] = useState(false);
   const [sort, setSort] = useState<SortState>(null);
+  const [pendingDelete, setPendingDelete] = useState<{
+    key: string;
+    id?: string;
+    label: string;
+  } | null>(null);
 
   const matchesQuery = useQuery({
     queryKey: ["admin", "soccer", "matches", seasonId],
@@ -369,6 +376,42 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
     onError: (error: Error) => toast.error(error.message),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: async (target: { key: string; id?: string }) => {
+      if (target.id?.trim()) {
+        await deleteMatch(seasonId, target.id);
+        await syncStandingsGoalsFromMatches(seasonId);
+      }
+      return target.key;
+    },
+    onSuccess: (key) => {
+      toast.success("Partido eliminado");
+      setPendingDelete(null);
+      setRows((prev) => prev.filter((row) => row.key !== key));
+      setBaseline((prev) => {
+        try {
+          const parsed = JSON.parse(prev) as MatchRow[];
+          return JSON.stringify(parsed.filter((row) => row.key !== key));
+        } catch {
+          return prev;
+        }
+      });
+      setDirtyKeys((prev) => {
+        if (!prev.has(key)) return prev;
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["admin", "soccer", "matches", seasonId],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["admin", "soccer", "standings", seasonId],
+      });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
   function updateRow(key: string, patch: Partial<MatchRow>) {
     setDirtyKeys((prev) => {
       if (prev.has(key)) return prev;
@@ -380,6 +423,15 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
       prev.map((row) => {
         if (row.key !== key) return row;
         const next = { ...row, ...patch };
+        if (patch.round_id !== undefined) {
+          const round = roundsById.get(patch.round_id);
+          next.round_name = round?.name ?? "";
+          next.round_phase =
+            (round?.phase ?? "").trim() ||
+            (round?.name ? "Fase Regular" : "");
+          next.round_position =
+            round?.position ?? Number.MAX_SAFE_INTEGER;
+        }
         const home = next.goals_home.trim();
         const away = next.goals_away.trim();
         // Both scores filled (incl. 0) → Finalizado automatically.
@@ -464,6 +516,7 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
               </th>
               <th className="border-b border-dx-line px-2 py-2.5">Logo V</th>
               <th className="border-b border-dx-line px-2 py-2.5">Estado</th>
+              <th className="border-b border-dx-line px-2 py-2.5" />
             </tr>
           </thead>
           <tbody>
@@ -475,14 +528,38 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
                 row.round_phase ||
                 round?.phase?.trim() ||
                 (row.round_name || round?.name ? "Fase Regular" : "—");
-              const jornadaLabel = row.round_name || round?.name || "—";
+              const rounds = roundsQuery.data?.data ?? [];
+              const matchLabel = [
+                home ? teamDisplayName(home) : row.home_label || "Local",
+                away ? teamDisplayName(away) : row.away_label || "Visitante",
+              ].join(" vs ");
               return (
                 <tr key={row.key} className="hover:bg-[#fbfdff]">
                   <td className="border-b border-dx-line px-2 py-1.5 text-[#41516b]">
                     {phaseLabel}
                   </td>
-                  <td className="border-b border-dx-line px-2 py-1.5 font-semibold text-dx-ink">
-                    {jornadaLabel}
+                  <td className="border-b border-dx-line px-2 py-1.5 min-w-[160px]">
+                    <select
+                      className={inputClass}
+                      value={row.round_id}
+                      tabIndex={1}
+                      onChange={(e) =>
+                        updateRow(row.key, { round_id: e.target.value })
+                      }
+                    >
+                      <option value="">Sin jornada</option>
+                      {row.round_id && !roundsById.has(row.round_id) ? (
+                        <option value={row.round_id}>
+                          {row.round_name || row.round_id}
+                        </option>
+                      ) : null}
+                      {rounds.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.phase ? `${item.phase} · ` : ""}
+                          {item.name}
+                        </option>
+                      ))}
+                    </select>
                   </td>
                   <td className="border-b border-dx-line px-2 py-1.5">
                     <input
@@ -605,6 +682,24 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
                       ))}
                     </select>
                   </td>
+                  <td className="border-b border-dx-line px-2 py-1.5">
+                    <button
+                      type="button"
+                      title="Eliminar partido"
+                      aria-label={`Eliminar partido ${matchLabel}`}
+                      disabled={deleteMutation.isPending}
+                      className="rounded-[7px] border border-dx-line p-1.5 text-[#64748b] hover:bg-[#fff1f0] hover:text-[#b42318] disabled:opacity-50"
+                      onClick={() =>
+                        setPendingDelete({
+                          key: row.key,
+                          id: row.id,
+                          label: matchLabel,
+                        })
+                      }
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </td>
                 </tr>
               );
             })}
@@ -613,10 +708,29 @@ export function SeasonMatchesPanel({ seasonId }: { seasonId: string }) {
       </div>
 
       <Note>
-        Fase y jornada son solo lectura (vienen de la estructura). Puedes
-        ordenar por Fase, Jornada o Fecha. Al guardar, los goles con marcador
-        completo actualizan GF/GC en Clasificación.
+        Puedes cambiar la jornada de cada partido y ordenar por Fase, Jornada o
+        Fecha. Al guardar, los goles con marcador completo actualizan GF/GC en
+        Clasificación.
       </Note>
+
+      <ConfirmModal
+        open={Boolean(pendingDelete)}
+        title="Eliminar partido"
+        description={
+          pendingDelete
+            ? `¿Eliminar «${pendingDelete.label}»? Se borrará de la base de datos y no se puede deshacer.`
+            : undefined
+        }
+        confirmLabel="Eliminar"
+        confirmingLabel="Eliminando…"
+        confirming={deleteMutation.isPending}
+        onCancel={() => {
+          if (!deleteMutation.isPending) setPendingDelete(null);
+        }}
+        onConfirm={() => {
+          if (pendingDelete) deleteMutation.mutate(pendingDelete);
+        }}
+      />
 
       <StickyActions
         dirty={dirty}

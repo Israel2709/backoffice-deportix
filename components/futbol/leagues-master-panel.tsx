@@ -8,6 +8,7 @@ import { FilteredSelect } from "@/components/capture/filtered-select";
 import { Field } from "@/components/capture/field";
 import { EditableDataTable } from "@/components/data/editable-data-table";
 import { CreateLeagueModal } from "@/components/futbol/create-league-modal";
+import { LeagueLogoModal } from "@/components/futbol/league-logo-modal";
 import { Button } from "@/components/ui/button";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { Hero } from "@/components/ui/hero";
@@ -47,6 +48,7 @@ export function LeaguesMasterPanel() {
   const queryClient = useQueryClient();
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [logoLeague, setLogoLeague] = useState<SoccerLeague | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{
     id: string;
     label: string;
@@ -175,6 +177,33 @@ export function LeaguesMasterPanel() {
 
   const columns = useMemo(
     () => [
+      {
+        id: "crest",
+        header: "Logo",
+        editable: false,
+        filterable: false,
+        sortable: false,
+        className: "w-[88px]",
+        format: (value: string, row: SoccerLeague) => (
+          <button
+            type="button"
+            title="Cambiar logo"
+            aria-label={`Cambiar logo de ${row.name || "liga"}`}
+            className="mx-auto flex h-10 w-10 items-center justify-center rounded-[8px] border border-transparent hover:border-dx-line hover:bg-[#f5f8ff] focus:border-dx-blue focus:outline-none"
+            onClick={(event) => {
+              event.stopPropagation();
+              setLogoLeague(row);
+            }}
+          >
+            {value ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={value} alt="" className="h-8 w-8 object-contain" />
+            ) : (
+              <span className="text-[11px] font-semibold text-dx-muted">+</span>
+            )}
+          </button>
+        ),
+      },
       { id: "name", header: "Nombre", placeholder: "Liga MX" },
       {
         id: "type",
@@ -194,21 +223,16 @@ export function LeaguesMasterPanel() {
         format: (value: string) =>
           value ? (orgNameById.get(value) ?? value) : "— Sin asignar —",
       },
-      {
-        id: "logo",
-        header: "Logo (URL)",
-        placeholder: "https://…",
-      },
     ],
     [orgOptions, orgNameById, typeOptions, typeLabelByCode],
   );
 
   const getValues = useCallback(
     (row: SoccerLeague) => ({
+      crest: row.logo ?? "",
       name: row.name ?? "",
       type: normalizeLeagueTypeCode(row.type, leagueTypeCodes),
       organization_id: row.organization_id ?? "",
-      logo: row.logo ?? "",
     }),
     [leagueTypeCodes],
   );
@@ -233,7 +257,6 @@ export function LeaguesMasterPanel() {
             change.values.type,
             leagueTypeCodes,
           ),
-          logo: change.values.logo?.trim() || null,
           organization_id: organizationId,
           // Prefer the selected org's country so moving orgs across countries works.
           // If unassigned, keep the league country (or the country being browsed).
@@ -405,9 +428,17 @@ export function LeaguesMasterPanel() {
         />
       ) : null}
 
+      <LeagueLogoModal
+        open={Boolean(logoLeague)}
+        onClose={() => setLogoLeague(null)}
+        leagueId={logoLeague?.id ?? ""}
+        leagueName={logoLeague?.name?.trim() || "Liga"}
+        currentLogo={logoLeague?.logo ?? null}
+      />
+
       <Note className="mt-5">
         {country
-          ? `Editando ligas de ${country.name}${country.code ? ` (${country.code})` : ""}. Puedes crear, editar o eliminar ligas; al asignar organización el país se alinea con el de esa organización.`
+          ? `Editando ligas de ${country.name}${country.code ? ` (${country.code})` : ""}. Puedes crear, editar o eliminar ligas; pulsa el logo para subirlo o cambiarlo. Al asignar organización el país se alinea con el de esa organización.`
           : "Primero selecciona un país para cargar la tabla."}
       </Note>
     </>
